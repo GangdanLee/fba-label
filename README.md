@@ -191,7 +191,7 @@ backend/.venv/bin/python scripts/smoke_test_release.py release_out/FBA-Label-Stu
     </td>
     <td align="center">
       <img src="docs/assets/wechat-personal.jpg" width="180" alt="作者个人微信二维码" /><br />
-      <strong>作者个人微信</strong><br />
+      <strong>作者 Morgan</strong><br />
       <sub>使用交流 / Bug 反馈 / 打印机适配</sub>
     </td>
   </tr>
