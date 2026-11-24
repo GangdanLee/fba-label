@@ -1,0 +1,158 @@
+name: Build and Release FBA Label Studio
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag/version (e.g. v0.1.0)"
+        required: true
+        default: "v0.1.0"
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUTF8: "1"
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform_tag }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform_tag: macos-arm64
+            extras: "dev,build"
+          - os: windows-latest
+            platform_tag: windows-x64
+            extras: "dev,build,windows"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine version tag
+        id: ver
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: "frontend/package-lock.json"
+
+      - name: Build M2 Frontend
+        shell: bash
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Setup uv and Python 3.12
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: false
+
+      - name: Install backend dependencies & run pytest gate
+        shell: bash
+        run: |
+          cd backend
+          unset VIRTUAL_ENV
+          uv venv .venv --python 3.12
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            export VIRTUAL_ENV="$PWD/.venv"
+            VENV_PY="$PWD/.venv/Scripts/python.exe"
+          else
+            export VIRTUAL_ENV="$PWD/.venv"
+            VENV_PY="$PWD/.venv/bin/python"
+          fi
+          echo "VENV_PY=$VENV_PY" >> "$GITHUB_ENV"
+          uv pip install --python "$VENV_PY" -e ".[${{ matrix.extras }}]"
+          "$VENV_PY" -m pytest -v
+
+      - name: Bundle standalone package via PyInstaller
+        shell: bash
+        run: |
+          "$VENV_PY" scripts/build_release.py --version "${{ steps.ver.outputs.tag }}" --platform-tag "${{ matrix.platform_tag }}" --skip-frontend-build
+
+      - name: Smoke test extracted standalone binary
+        shell: bash
+        run: |
+          ZIP_FILE="release_out/FBA-Label-Studio-${{ steps.ver.outputs.tag }}-${{ matrix.platform_tag }}.zip"
+          "$VENV_PY" scripts/smoke_test_release.py "$ZIP_FILE"
+
+      - name: Upload release package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform_tag }}
+          path: |
+            release_out/*.zip
+            release_out/*.sha256
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist_artifacts
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS and publish Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.version }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          cd dist_artifacts
+          cat *.sha256 > SHA256SUMS.txt
+          ls -lh
+
+          cat > /tmp/release_notes.md <<'EOF'
+          ## FBA Label Studio 免安装桌面发行版
+
+          本版本已完整内嵌前端工作台与 Python/PyMuPDF 后端引擎，**无需安装 Python 或 Node.js，解压后双击即可在默认浏览器打开使用**。
+
+          ### 下载选择
+          - **macOS (Apple Silicon / M1–M4)**：`FBA-Label-Studio-...-macos-arm64.zip`
+            - 解压后双击 `启动-FBA标签工作台.command`；首次运行若提示「无法验证开发者」，请按住 `Control` 键点击该文件选「打开」（或终端执行 `xattr -cr .`）。
+          - **Windows (64位)**：`FBA-Label-Studio-...-windows-x64.zip`
+            - 解压后双击 `启动-FBA标签工作台.bat`（或 `app\FBA-Label-Studio.exe`）；首次运行若遇到 Windows SmartScreen 提示，点「更多信息」→「仍要运行」即可。
+
+          ### 数据安全提示
+          - 所有 PDF 解析、隐私物理擦除和打印机校准均在本机离线运行。
+          - 用户数据库独立保存在系统应用数据目录，升级覆盖程序文件夹不会丢失模板与打印记录。
+          EOF
+
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "$TAG" *.zip SHA256SUMS.txt --clobber --repo "${{ github.repository }}"
+            gh release edit "$TAG" --notes-file /tmp/release_notes.md --repo "${{ github.repository }}"
+          else
+            gh release create "$TAG" *.zip SHA256SUMS.txt \
+              --repo "${{ github.repository }}" \
+              --title "FBA Label Studio $TAG" \
+              --notes-file /tmp/release_notes.md
+          fi

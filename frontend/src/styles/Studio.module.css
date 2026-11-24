@@ -1,0 +1,563 @@
+.studioShell {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+/* 左侧 68px 导航轨 */
+.iconRail {
+  width: 68px;
+  flex-shrink: 0;
+  background: var(--bg-rail);
+  color: #9ca3af;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 6px;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  user-select: none;
+}
+
+.railGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.railLogo {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.4px;
+  margin-bottom: 10px;
+}
+
+.railBtn {
+  width: 54px;
+  min-height: 50px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: #a1a1aa;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 2px;
+  font-size: 12px;
+  font-weight: 500;
+  position: relative;
+  transition: background-color 0.14s, color 0.14s;
+}
+
+.railBtn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f3f4f6;
+}
+
+.railBtnActive {
+  background: rgba(59, 130, 246, 0.22);
+  color: #ffffff;
+}
+
+.railBtnActive::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 11px;
+  bottom: 11px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: #3b82f6;
+}
+
+.railBottomBtn {
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #d4d4d8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.railBottomBtn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.workspaceMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 顶部 50px 精简上下文栏 */
+.studioHeader {
+  height: 50px;
+  flex-shrink: 0;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hdrLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.hdrTitle {
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.hdrCrumb {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 440px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+
+.hdrRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.specPill {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.specPill:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.specPillMismatch {
+  border-color: rgba(217, 119, 6, 0.45);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+/* 通用三栏工作区骨架 */
+.threePaneStudio {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.leftPanel {
+  width: 304px;
+  flex-shrink: 0;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.leftPanelNarrow {
+  width: 260px;
+  flex-shrink: 0;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.rightPanel {
+  width: 296px;
+  flex-shrink: 0;
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 14px;
+}
+
+.centerStage {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-stage);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.paneSec {
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--border);
+}
+
+.secTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 7px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.importSlot {
+  border: 1.5px dashed var(--border-strong);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: var(--bg-subtle);
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+
+.importSlot:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* 舞台顶部双胶囊工具栏 */
+.stageTopbar {
+  padding: 10px 16px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.stageFloatBar {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 0 8px;
+  height: 38px;
+  box-shadow: var(--shadow-float);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+/* 外箱双联安全居中展示 */
+.stageViewport {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  padding: 16px 20px;
+}
+
+.dualPaperRow {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  justify-content: center;
+  gap: clamp(12px, 1.8vw, 24px);
+  width: 100%;
+  max-width: 1040px;
+  margin: auto;
+}
+
+.dualPaperRowSingle {
+  max-width: 480px;
+}
+
+.dualPaperRowCompare {
+  align-items: center;
+  max-width: 960px;
+}
+
+.paperCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1 1 180px;
+  min-width: 0;
+  max-width: min(360px, calc(100vh - 220px));
+}
+
+.dualPaperRowSingle .paperCard {
+  max-width: min(430px, calc(100vh - 220px));
+}
+
+.paperSheetSquare {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: #ffffff;
+  border-radius: 4px;
+  box-shadow: var(--shadow-paper);
+  overflow: hidden;
+  line-height: 0;
+}
+
+.paperSheetSquare img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.safeGuideBox {
+  position: absolute;
+  left: 1%;
+  top: 1%;
+  width: 98%;
+  height: 98%;
+  border: 1.5px dashed rgba(239, 68, 68, 0.72);
+  pointer-events: none;
+}
+
+.paperMeta {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  text-align: center;
+  max-width: 100%;
+  min-height: 24px;
+}
+
+.pairBridgeBadge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 10px 9px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-float);
+  flex: 0 0 auto;
+  min-width: 112px;
+  max-width: 136px;
+  text-align: center;
+  align-self: center;
+  margin-bottom: 30px;
+}
+
+.missingSlotCard {
+  flex: 1 1 180px;
+  min-width: 0;
+  max-width: min(360px, calc(100vh - 220px));
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border: 2px dashed var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.compareOrigCard {
+  flex: 0.52 1 130px;
+  min-width: 130px;
+  max-width: min(240px, calc((100vh - 220px) * 0.71));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.compareOrigSheet {
+  width: 100%;
+  aspect-ratio: 290 / 408;
+  background: #ffffff;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  box-shadow: var(--shadow-paper);
+  overflow: hidden;
+}
+
+.compareOrigSheet img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.compareStage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1 1 220px;
+  min-width: 0;
+  max-width: min(400px, calc(100vh - 220px));
+}
+
+.compareBox {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: #ffffff;
+  border-radius: 6px;
+  box-shadow: var(--shadow-paper);
+  overflow: hidden;
+  user-select: none;
+  cursor: ew-resize;
+}
+
+.compareLayer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.compareLayer img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}
+
+.compareTag {
+  position: absolute;
+  top: 8px;
+  z-index: 5;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 99px;
+  max-width: calc(50% - 10px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.compareTagRaw {
+  left: 8px;
+  background: rgba(220, 38, 38, 0.9);
+  color: #fff;
+}
+
+.compareTagClean {
+  right: 8px;
+  background: rgba(22, 163, 74, 0.92);
+  color: #fff;
+}
+
+/* 编辑器画布舞台与浮动栏 */
+.edCanvasStage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.floatingCtxBar {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 4px 8px;
+  box-shadow: var(--shadow-float);
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.edCanvasViewport {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 48px 24px 18px;
+  user-select: none;
+}
+
+.edCanvasViewport::before,
+.edCanvasViewport::after {
+  content: "";
+  flex: 1 0 0;
+}
+
+.edCanvasViewport > * {
+  margin-left: auto;
+  margin-right: auto;
+  flex-shrink: 0;
+}
+
+.rulerFrame {
+  display: inline-grid;
+  background: var(--bg-surface);
+  padding: 0 10px 10px 0;
+  border-radius: 6px;
+  box-shadow: var(--shadow-paper);
+}
+
+.edBottomDock {
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+  padding: 9px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
