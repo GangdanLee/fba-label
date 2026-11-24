@@ -5,7 +5,7 @@ from __future__ import annotations
 from app.engines.pdf_engine import PyMuPDFEngine
 from app.models.schemas import PrinterDevice
 from app.printers.base import PrinterAdapter
-from app.printers.registry import infer_printer_hints
+from app.printers.registry import infer_printer_brand_note, infer_printer_hints
 
 
 class WindowsRawAdapter(PrinterAdapter):
@@ -45,6 +45,7 @@ class WindowsRawAdapter(PrinterAdapter):
         for item in win32print.EnumPrinters(flags):
             name = item[2]
             sugg_proto, sugg_dpi, is_thermal = infer_printer_hints(name)
+            brand_label, usage_tip = infer_printer_brand_note(name)
             devices.append(
                 PrinterDevice(
                     name=name,
@@ -55,6 +56,8 @@ class WindowsRawAdapter(PrinterAdapter):
                     suggested_protocol=sugg_proto,
                     suggested_dpi=sugg_dpi,
                     is_thermal_hint=is_thermal,
+                    brand_label=brand_label,
+                    usage_tip=usage_tip,
                 )
             )
         return devices

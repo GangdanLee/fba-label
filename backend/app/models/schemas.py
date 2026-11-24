@@ -128,6 +128,8 @@ class PairingPairItem(BaseModel):
     carrier_box: CarrierBoxMeta | None = None
     selected: bool = True
     copies: int = 4
+    fba_copies: int = 2
+    carrier_copies: int = 1
 
 
 class PairingGroup(BaseModel):
@@ -166,9 +168,26 @@ class PairingRequest(BaseModel):
     order_mode: Literal["interleave", "per_box_group", "split_all"] = "interleave"
     default_copies: int = 4
     box_copies: dict[str, int] = Field(default_factory=dict)
+    default_fba_copies: int | None = None
+    default_carrier_copies: int | None = None
+    box_fba_copies: dict[str, int] = Field(default_factory=dict)
+    box_carrier_copies: dict[str, int] = Field(default_factory=dict)
     selected_keys: dict[str, bool] = Field(default_factory=dict)
     force_unlocked: bool = False
     active_shipment_id: str | None = None
+
+
+class BoxPrintPreferences(BaseModel):
+    """外箱工作台默认打印配比组合与脱敏规则偏好（持久化于 SQLite）。"""
+
+    default_fba_copies: int = Field(default=2, ge=0, le=20)
+    default_carrier_copies: int = Field(default=1, ge=0, le=20)
+    order_mode: Literal["interleave", "per_box_group", "split_all"] = "per_box_group"
+    work_mode: Literal["paired", "fba_only", "carrier_only"] = "paired"
+    redact_ship_from: bool = True
+    redact_fba_company: bool = True
+    redact_headers: bool = False
+    auto_add_mic: bool = True
 
 
 class PairingResponse(BaseModel):
@@ -281,6 +300,8 @@ class CalibrationProfile(BaseModel):
     connection_type: Literal["os_queue", "network_tcp"] = "os_queue"
     network_host: str = ""
     network_port: int = Field(default=9100, ge=1, le=65535)
+    tspl_direction: Literal[0, 1] = 1
+    invert_bitmap: bool = False
 
 
 class SpecStateUpdate(BaseModel):
@@ -331,6 +352,8 @@ class PrinterDevice(BaseModel):
     suggested_protocol: Literal["tspl", "zpl", "os_driver"] = "tspl"
     suggested_dpi: Literal[203, 300] = 203
     is_thermal_hint: bool = False
+    brand_label: str = ""
+    usage_tip: str = ""
 
 
 class CarrierRule(BaseModel):

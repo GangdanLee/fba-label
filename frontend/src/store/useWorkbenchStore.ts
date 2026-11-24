@@ -81,6 +81,11 @@ interface WorkbenchState {
   showSafeFrame: boolean;
   defaultCopies: number;
   boxCopies: Record<string, number>;
+  fbaCopies: number;
+  carrierCopies: number;
+  boxFbaCopies: Record<string, number>;
+  boxCarrierCopies: Record<string, number>;
+  prefsSavedAt: number;
   selectedBoxKeys: Record<string, boolean>;
   forceUnlocked: boolean;
   redactionOptions: FbaRedactionOptions;
@@ -129,8 +134,13 @@ interface WorkbenchState {
   setStageMode: (mode: BoxStageMode) => void;
   setShowSafeFrame: (v: boolean) => void;
   setDefaultCopies: (n: number) => Promise<void>;
+  setCopyCombo: (fba: number, carrier: number) => Promise<void>;
   setSingleBoxCopies: (shipmentId: string, boxIdx: number, copies: number) => Promise<void>;
+  setSingleBoxPairCopies: (shipmentId: string, boxIdx: number, fba: number, carrier: number) => Promise<void>;
+  resetBoxPairCustomCopies: (shipmentId: string, boxIdx: number) => Promise<void>;
   toggleSingleBoxSelected: (shipmentId: string, boxIdx: number, selected: boolean) => Promise<void>;
+  selectAllBoxes: (shipmentId: string, selected: boolean) => Promise<void>;
+  persistBoxPrefs: () => Promise<void>;
   setActiveGroupId: (sid: string) => void;
   setActiveBoxIndex: (idx: number) => void;
   recomputePairing: () => Promise<void>;
@@ -190,11 +200,16 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   carrierFiles: [],
   manualAssignments: {},
   workMode: "paired",
-  orderMode: "interleave",
+  orderMode: "per_box_group",
   stageMode: "dual",
   showSafeFrame: true,
-  defaultCopies: 4,
+  defaultCopies: 2,
   boxCopies: {},
+  fbaCopies: 2,
+  carrierCopies: 1,
+  boxFbaCopies: {},
+  boxCarrierCopies: {},
+  prefsSavedAt: 0,
   selectedBoxKeys: {},
   forceUnlocked: false,
   redactionOptions: {
@@ -231,14 +246,16 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
 
   initApp: async () => {
     try {
-      const [profiles, specState, templates, batches, printers] = await Promise.all([
+      const [profiles, specState, templates, batches, printers, prefs] = await Promise.all([
         api.fetchProfiles(),
         api.fetchSpecState(),
         api.fetchTemplates(),
         api.fetchBatches(),
         api.fetchPrinters().catch(() => []),
+        api.fetchBoxPreferences().catch(() => null),
       ]);
       const prof50 = profiles.find((p) => p.spec_key === "50x30_double");
+      const curRedaction = get().redactionOptions;
       set({
         profiles,
         lastPrintedSpec: specState.last_printed_spec || "100x100_single",
@@ -246,6 +263,22 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         batches,
         printers,
         colGapMm: prof50 ? prof50.col_gap_mm : 2.0,
+        ...(prefs
+          ? {
+              fbaCopies: prefs.default_fba_copies,
+              carrierCopies: prefs.default_carrier_copies,
+              defaultCopies: Math.max(1, prefs.default_fba_copies, prefs.default_carrier_copies),
+              orderMode: prefs.order_mode,
+              workMode: prefs.work_mode,
+              redactionOptions: {
+                ...curRedaction,
+                redact_ship_from: prefs.redact_ship_from,
+                redact_fba_company: prefs.redact_fba_company,
+                redact_headers: prefs.redact_headers,
+                auto_add_mic: prefs.auto_add_mic,
+              },
+            }
+          : {}),
       });
     } catch (err) {
       notifications.show({
@@ -302,6 +335,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       order_mode: s.orderMode,
       default_copies: s.defaultCopies,
       box_copies: s.boxCopies,
+      default_fba_copies: s.fbaCopies,
+      default_carrier_copies: s.carrierCopies,
+      box_fba_copies: s.boxFbaCopies,
+      box_carrier_copies: s.boxCarrierCopies,
       selected_keys: s.selectedBoxKeys,
       force_unlocked: s.forceUnlocked,
       active_shipment_id: s.activeGroupId,
@@ -402,8 +439,31 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     await get().recomputePairing();
   },
 
+  persistBoxPrefs: async () => {
+    const s = get();
+    const safeFba = Math.max(0, Math.min(20, Number(s.fbaCopies) || 0));
+    const safeCar = Math.max(0, Math.min(20, Number(s.carrierCopies) || 0));
+    if (safeFba === 0 && safeCar === 0) return;
+    try {
+      await api.saveBoxPreferences({
+        default_fba_copies: safeFba,
+        default_carrier_copies: safeCar,
+        order_mode: s.orderMode,
+        work_mode: s.workMode,
+        redact_ship_from: s.redactionOptions.redact_ship_from,
+        redact_fba_company: s.redactionOptions.redact_fba_company,
+        redact_headers: s.redactionOptions.redact_headers,
+        auto_add_mic: s.redactionOptions.auto_add_mic,
+      });
+      set({ prefsSavedAt: Date.now() });
+    } catch {
+      // 不阻塞主排版交互，保留当前状态
+    }
+  },
+
   updateRedactionOption: async (key, val) => {
     set((s) => ({ redactionOptions: { ...s.redactionOptions, [key]: val } }));
+    void get().persistBoxPrefs();
     const curFiles = get().fbaFiles;
     if (!curFiles.some((f) => f.rawFile)) return;
     set({ boxBusy: true });
@@ -424,11 +484,13 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   setWorkMode: async (mode) => {
     set({ workMode: mode });
     await get().recomputePairing();
+    void get().persistBoxPrefs();
   },
 
   setOrderMode: async (mode) => {
     set({ orderMode: mode });
     await get().recomputePairing();
+    void get().persistBoxPrefs();
   },
 
   setStageMode: (mode) => set({ stageMode: mode }),
@@ -436,19 +498,73 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
 
   setDefaultCopies: async (n) => {
     const val = Math.max(1, Math.min(20, n));
-    set({ defaultCopies: val, boxCopies: {} });
+    await get().setCopyCombo(val, val);
+  },
+
+  setCopyCombo: async (fba, carrier) => {
+    let nextFba = Math.max(0, Math.min(20, Math.round(Number(fba) || 0)));
+    const nextCar = Math.max(0, Math.min(20, Math.round(Number(carrier) || 0)));
+    if (nextFba === 0 && nextCar === 0) nextFba = 1;
+    set({
+      fbaCopies: nextFba,
+      carrierCopies: nextCar,
+      defaultCopies: Math.max(1, nextFba, nextCar),
+      boxCopies: {},
+      boxFbaCopies: {},
+      boxCarrierCopies: {},
+    });
     await get().recomputePairing();
+    await get().persistBoxPrefs();
   },
 
   setSingleBoxCopies: async (shipmentId, boxIdx, copies) => {
+    const val = Math.max(1, Math.min(20, copies));
+    await get().setSingleBoxPairCopies(shipmentId, boxIdx, val, val);
+  },
+
+  setSingleBoxPairCopies: async (shipmentId, boxIdx, fba, carrier) => {
     const key = `${shipmentId}:${boxIdx}`;
-    set((s) => ({ boxCopies: { ...s.boxCopies, [key]: Math.max(1, Math.min(20, copies)) } }));
+    let nextFba = Math.max(0, Math.min(20, Math.round(Number(fba) || 0)));
+    const nextCar = Math.max(0, Math.min(20, Math.round(Number(carrier) || 0)));
+    if (nextFba === 0 && nextCar === 0) nextFba = 1;
+    set((s) => ({
+      boxFbaCopies: { ...s.boxFbaCopies, [key]: nextFba },
+      boxCarrierCopies: { ...s.boxCarrierCopies, [key]: nextCar },
+      boxCopies: { ...s.boxCopies, [key]: Math.max(nextFba, nextCar) },
+    }));
+    await get().recomputePairing();
+  },
+
+  resetBoxPairCustomCopies: async (shipmentId, boxIdx) => {
+    const key = `${shipmentId}:${boxIdx}`;
+    set((s) => {
+      const nf = { ...s.boxFbaCopies };
+      const nc = { ...s.boxCarrierCopies };
+      const nb = { ...s.boxCopies };
+      delete nf[key];
+      delete nc[key];
+      delete nb[key];
+      return { boxFbaCopies: nf, boxCarrierCopies: nc, boxCopies: nb };
+    });
     await get().recomputePairing();
   },
 
   toggleSingleBoxSelected: async (shipmentId, boxIdx, selected) => {
     const key = `${shipmentId}:${boxIdx}`;
     set((s) => ({ selectedBoxKeys: { ...s.selectedBoxKeys, [key]: selected } }));
+    await get().recomputePairing();
+  },
+
+  selectAllBoxes: async (shipmentId, selected) => {
+    const group = get().pairing.groups.find((g) => g.shipment_id === shipmentId);
+    if (!group) return;
+    set((s) => {
+      const next = { ...s.selectedBoxKeys };
+      group.pairs.forEach((p) => {
+        next[`${shipmentId}:${p.box_index}`] = selected;
+      });
+      return { selectedBoxKeys: next };
+    });
     await get().recomputePairing();
   },
 
@@ -503,6 +619,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       fbaFiles: [],
       carrierFiles: [],
       manualAssignments: {},
+      boxCopies: {},
+      boxFbaCopies: {},
+      boxCarrierCopies: {},
+      selectedBoxKeys: {},
       pairing: EMPTY_PAIRING,
       activeGroupId: null,
       activeBoxIndex: 1,

@@ -418,6 +418,8 @@ async def execute_print(req: ExecutePrintRequest) -> dict[str, object]:
                 speed=speed,
                 offset_x_mm=ox,
                 offset_y_mm=oy,
+                direction=(prof.tspl_direction if prof else 1),
+                invert_bitmap=(bool(prof.invert_bitmap) if prof else False),
             )
             decoded_tspl = parse_and_decode_tspl(raw_bytes)
             raw_bytes_len = len(raw_bytes)

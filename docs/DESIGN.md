@@ -1,8 +1,8 @@
 # FBA 一体化标签打印工作台 — 架构设计与项目规划文档
 
-> **文档状态**：v0.3.0 生产架构基线（M1–M4 及 v0.2.0 / v0.3.0 均已交付验证）  
+> **文档状态**：v0.4.0 生产架构基线（M1–M4 及 v0.2.0 / v0.3.0 / v0.4.0 均已交付验证）  
 > **适用平台**：macOS / Windows（跨平台本地独立发行包 & 本地 Web 工作台）  
-> **支持打印机与协议**：兼容 **TSPL2**（TSC / 芯烨 / 佳博 / 汉印 / Rollo）、**ZPL II**（斑马 Zebra / 工业机）、系统原生驱动与局域网 **TCP 9100** 直连（`203` / `300 dpi`），支持多机分卷绑定与印刷级 PDF 导出。
+> **支持打印机与协议**：兼容 **TSPL2**（TSC / 芯烨 Xprinter XP-420B / 佳博 Gprinter GP-1324D 等 / 4BARCODE / 汉印 / Rollo）、**ZPL II**（斑马 Zebra / 工业机）、系统原生驱动与局域网 **TCP 9100** 直连（`203` / `300 dpi`），支持多机分卷绑定与印刷级 PDF 导出。
 
 ---
 
@@ -20,7 +20,7 @@
 在实际亚马逊 FBA 发货作业中，产品打标与外箱打标往往处于不同时间节点：
 - **阶段 A（货品预处理期）**：随时打开「标签设计工作台」，拖入或选择亚马逊产品标签 PDF（或从本地模板库直接选中已有模板），输入本次发货数量（例如 `120`），一键双排打印并保存到本地模板库。
 - **阶段 B（装箱打包期）**：打包称重并在亚马逊创建箱标、向货代拿到箱唛后，打开「外箱标 & 箱唛工作台」，通过**双通道独立导入舱**分别导入（支持批量多选/拖入）原始 FBA 外箱标 PDF 与货代箱唛 PDF，导入瞬间**自动执行空白区裁切 + 语义脱敏 + `98×98mm` 居中落版**，并严格**以 FBA 编号（Shipment ID）为第一主键**自动完成多票配对分组，按需选择以下 **3 种独立工作模式**：
-  1. **按号配对模式（最常用）**：系统按 FBA 编号自动配齐两份 PDF 的对应箱号，做强校验（货件号/仓点/箱数一致）→ 设定每箱套数（默认 4 套，支持 3~5 套任意设或单箱微调）→ 按“贴面交替”或“同箱紧邻”出纸。
+  1. **按号配对模式（最常用）**：系统按 FBA 编号自动配齐两份 PDF 的对应箱号，做强校验（货件号/仓点/箱数一致）→ 设定每箱独立配比（支持 `2+1`、`2+2`、`4+2`、`4+4`、`1+1` 一键预设或单独微调 FBA/箱唛张数及按箱自定义覆写，自动写入 SQLite 默认留存）→ 按「按箱成组」「轮流交替」或「分组先后」出纸。
   2. **仅处理 FBA 外箱标模式**：仅拖入亚马逊箱标 PDF → 导入即自动脱敏、裁边、居中至 `98×98mm`（`100×100mm` 画布）→ 单独打印或导出 PDF。
   3. **仅处理货代箱唛模式**：仅拖入货代箱唛 PDF → 自动校验规格与边距居中 → 批量多份打印或单独补打。
 
@@ -187,7 +187,8 @@ fba-label/
 │       ├── test_fnsku_layout.py      # 双排排版 + 203dpi 整数 dot 扫码测试
 │       ├── test_tspl_dryrun.py       # TSPL 指令逆向解码与 API 烟雾测试
 │       ├── test_multi_printer.py     # ZPL/TSPL 300dpi、TCP 9100、SQLite 迁移与硬件路由测试
-│       └── test_v030_batch_and_rules.py # 多编码 CSV 批量套打、自定义校准卡与货代规则测试
+│       ├── test_v030_batch_and_rules.py # 多编码 CSV 批量套打、自定义校准卡与货代规则测试
+│       └── test_v040_printers_and_combos.py # 芯烨/佳博识别与 TSPL 加固、独立配比排期及偏好持久化测试
 ├── frontend/                         # React 19 + TypeScript + Mantine 9 + Zustand 工作台
 │   └── src/components/               # BoxStudio / CarrierRulesModal / EditorStudio / BatchSkuModal / BatchesView / HardwareView / PrintModal 等
 └── scripts/
@@ -200,10 +201,10 @@ fba-label/
 ### 4.4 SQLite 核心表结构与统一画布元素 Schema
 1. **`skus`（产品 SKU 档案与自由排版模板）**
    - `id` (PK), `sku` (UNIQUE), `fnsku`, `title_raw`, `title_clean`, `canvas_elements_json` (存储统一画布元素 JSON 数组，替代固定参数字段，完整保存用户的自由拖放排版), `updated_at`
-2. **`calibration_profiles`（双规格硬件校准与通道配置）**
-   - `spec_key` (PK: `'50x30_double'` | `'100x100_single'`), `label_width_mm`, `label_height_mm`, `cols`, `col_gap_mm`, `row_gap_mm`, `safe_width_mm`, `safe_height_mm`, `offset_x_mm`, `offset_y_mm`, `darkness` (0~15), `print_speed` (20~50), `preferred_channel` (`'tspl_raw'` | `'os_driver'` | `'pdf_export'`), `printer_name`
-3. **`app_state`（运行时防呆状态）**
-   - `key` (PK: `'last_printed_spec'`), `value` (`'50x30_double'` | `'100x100_single'` | `''`), `updated_at`
+2. **`calibration_profiles`（多规格硬件校准、兼容参数与通道配置）**
+   - `spec_key` (PK: `'50x30_double'` | `'100x100_single'` | 自定义规格), `label_width_mm`, `label_height_mm`, `cols`, `col_gap_mm`, `row_gap_mm`, `safe_width_mm`, `safe_height_mm`, `offset_x_mm`, `offset_y_mm`, `darkness` (0~15), `print_speed` (1~8), `preferred_channel` (`'tspl_raw'` | `'os_driver'` | `'pdf_export'`), `printer_name`, `protocol` (`'tspl'` | `'zpl'`), `dpi` (`203` | `300`), `connection_type` (`'os_queue'` | `'network_tcp'`), `network_host`, `network_port`, `tspl_direction` (`0` | `1`), `invert_bitmap` (`0` | `1`)
+3. **`app_state`（运行时防呆与偏好持久化状态）**
+   - `key` (PK: `'last_printed_spec'` | `'box_print_preferences'`), `value` (纸卷记忆标识或独立配比组合/顺序/脱敏偏好 JSON), `updated_at`
 4. **`print_batches`（历史打印批次与补打快照）**
    - `id` (PK), `batch_type` (`'fnsku'` | `'box_paired'` | `'box_fba_only'` | `'box_carrier_only'`), `shipment_id`, `warehouse_code`, `total_units_or_boxes`, `copies_per_box`, `order_mode`, `source_files_json`, `overlay_elements_json` (记录外箱精修手动叠加层快照), `snapshot_dir` (保存已处理好的标准单页矢量 PDF，确保任意时间零误差秒补打), `created_at`
 5. **`carrier_rules`（货代箱唛解析规则扩展表）**
@@ -236,7 +237,8 @@ fba-label/
 ### 4.5 核心 REST API 契约
 - `POST /api/box/parse-fba`：批量上传 1 个或多个 FBA 原始 PDF + 脱敏选项 → **立即自动切分拼版、裁切多余空白区、物理脱敏并按 `98×98mm` 居中落入 `100×100mm` 画布** → 返回各文件解析与提取出的 `shipment_id` 列表及每箱预览图 URL（含裁切前整页框与脱敏对比图）。
 - `POST /api/box/parse-carrier`：批量上传 1 个或多个货代箱唛 PDF → 自动裁切边距至 `98×98mm` 居中并提取 `shipment_id`、`warehouse_code` 与 `CTNS:X/N` 箱号 → 返回箱唛文件池列表。
-- `POST /api/box/validate-pair`：基于当前 FBA 文件池与货代箱唛文件池，**以 `shipment_id`（FBA 编号）为第一配对主键、箱号序号 `1..N` 为第二配对主键**自动聚合为多个配对分组（支持多票货件混导自动拆组），返回每组状态（`matched` / `fba_only` / `carrier_only` / `mismatch_detail`）与差异明细。
+- `POST /api/box/validate-pair` / `POST /api/box/pair`：基于当前 FBA 文件池与货代箱唛文件池，**以 `shipment_id`（FBA 编号）为第一配对主键、箱号序号 `1..N` 为第二配对主键**自动聚合为多个配对分组（支持多票货件混导自动拆组及 `default_fba_copies` / `default_carrier_copies` / 单箱独立配比排期），返回每组状态（`matched` / `fba_only` / `carrier_only` / `mismatch_detail`）与出纸队列。
+- `GET/PUT /api/box/preferences`：读取或持久化外箱工作台常用的 `FBA + 货代箱唛` 默认张数配比、作业模式、出纸顺序与脱敏规则偏好至 SQLite `app_state`。
 - `POST /api/box/execute`：传入工作模式（配对/仅FBA/仅箱唛）、选中箱列表、每箱套数、出纸顺序、输出通道 → 执行打印或返回印刷级合并 PDF 下载链接，并自动保存历史批次快照。
 - `POST /api/fnsku/import-pdf`：上传本地亚马逊产品标签 PDF → 提取 `fnsku` 与原始标题，返回清洗前后对照结果。
 - `GET/POST/PUT /api/skus`：SKU 档案库增删改查与版式保存。
@@ -329,7 +331,7 @@ fba-label/
 3. **外箱三栏配对工作台与克制的人工兜底**：
    - **左栏**：双通道独立导入舱（① 亚马逊外箱 PDF、② 货代箱唛 PDF）、作业模式切换（成对配对 / 仅打外箱 / 仅打箱唛）、按 FBA 编号自动配对分组及箱号步进队列；未含 FBA 编号的箱唛在通道 ② 文件卡片中醒目标记并提供「归属货件」下拉框人工归属。
    - **中栏大舞台**：双联卡片与对比盒按可用宽高自适应等比缩放且 `flex-wrap: nowrap` 水平单排居中齐平（常规桌面屏不折行、顶部无裁切），支持「双联配对」（Box X ↔ CTNS:X/N 桥梁与缺失槽位补导）与「原图与处理对比」（第 1 步自动裁切示意 + 第 2 步左右拖动卷帘对比），顶部保留「调整这张标签」入口可将该箱带入设计器做叠层微调。
-   - **右栏控制台**：每箱套数步进（默认 4 套，建议 3~5 面）、出纸顺序（贴面交替 / 同箱紧邻 / 分组先后）实时排队芯片预览、隐藏敏感信息 4 项规则开关、单箱单独补打与一键直连打印 / 导出合并 PDF。
+   - **右栏控制台**：每箱独立配比控制（预设 `2+1` / `2+2` / `4+2` / `4+4` / `1+1` 胶囊、双色 `FBA/唛` 张数微调、单箱自定义与「已记住偏好」SQLite 持久化提示）、出纸顺序（按箱成组 / 轮流交替 / 分组先后）实时排队芯片预览、隐藏敏感信息 4 项规则开关与一键直连打印 / 导出合并 PDF。
 4. **标签设计工作台、新建标签与条码文本一体化约束**：
    - **条形码与可读编码一体化**：FNSKU 一维码采用单个 `barcode1d` 元素一体化渲染条纹与正下方人类可读编码文字（提供「同时显示下方编号文字」开关与字号调节），**严禁把条形码和其正下方编号拆成两个独立元素**；修改编码时条形与文字同步联动更新，杜绝错号风险。
    - **新建标签与自由画布**：左栏支持 `+ 新建标签`（预设 `50×30mm 双排` / `40×30mm 双排` / `100×100mm 单排` 或自定义宽高与单/双排排版）、本地标签导入及基础元素/图层/模板抽屉；中栏自由画布支持毫米刻度尺、拖拽、8 向缩放、网格对齐吸附、悬浮上下文对齐栏、底部出纸实时预览与打印效果模拟；右栏防溢出属性检查器（`min-width: 0`）。

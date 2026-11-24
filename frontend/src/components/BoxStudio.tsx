@@ -12,11 +12,13 @@ import {
   Radio,
   SegmentedControl,
   Select,
+  SimpleGrid,
   Stack,
   Text,
+  Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { AlertTriangle, ArrowLeftRight, Pencil, SlidersHorizontal, Upload, X } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, Pencil, RotateCcw, SlidersHorizontal, Upload, X } from "lucide-react";
 import * as api from "../api/client";
 import classes from "../styles/Studio.module.css";
 import { useWorkbenchStore } from "../store/useWorkbenchStore";
@@ -32,6 +34,11 @@ export function BoxStudio() {
     stageMode,
     showSafeFrame,
     defaultCopies,
+    fbaCopies,
+    carrierCopies,
+    boxFbaCopies,
+    boxCarrierCopies,
+    prefsSavedAt,
     redactionOptions,
     pairing,
     activeGroupId,
@@ -49,9 +56,11 @@ export function BoxStudio() {
     setOrderMode,
     setStageMode,
     setShowSafeFrame,
-    setDefaultCopies,
-    setSingleBoxCopies,
+    setCopyCombo,
+    setSingleBoxPairCopies,
+    resetBoxPairCustomCopies,
     toggleSingleBoxSelected,
+    selectAllBoxes,
     setActiveGroupId,
     setActiveBoxIndex,
     loadFictionalDemo,
@@ -87,15 +96,21 @@ export function BoxStudio() {
 
   const handleOpenPrint = () => {
     if (!pairing.can_print || !activeGroup) return;
+    const comboDesc =
+      workMode === "fba_only"
+        ? `仅FBA×${fbaCopies}`
+        : workMode === "carrier_only"
+          ? `仅箱唛×${carrierCopies}`
+          : `FBA×${fbaCopies}+唛×${carrierCopies}`;
     openPrintJob({
       title: `打印外箱任务 · ${activeGroup.shipment_id}`,
-      summaryDesc: `${activeGroup.shipment_id}（${pairing.total_sheets} 张）`,
+      summaryDesc: `${activeGroup.shipment_id}（${comboDesc}，共 ${pairing.total_sheets} 张）`,
       specKey: "100x100_single",
       batchType: workMode === "fba_only" ? "box_fba_only" : workMode === "carrier_only" ? "box_carrier_only" : "box_paired",
       shipmentId: activeGroup.shipment_id,
       warehouseCode: activeGroup.warehouse_code || "-",
       totalUnitsOrBoxes: activeGroup.pairs.filter((p) => p.selected).length,
-      copiesPerBox: defaultCopies,
+      copiesPerBox: Math.max(1, defaultCopies, fbaCopies, carrierCopies),
       orderMode,
       totalSheets: pairing.total_sheets,
       sourceFiles: [...fbaFiles.map((f) => f.file_name), ...carrierFiles.map((f) => f.file_name)],
@@ -343,10 +358,26 @@ export function BoxStudio() {
           <div style={{ padding: "8px 13px 14px" }}>
             <div className={classes.secTitle}>
               <span>箱号队列</span>
+              {activeGroup.pairs.length > 0 && (
+                <Button
+                  size="compact-xs"
+                  variant="subtle"
+                  onClick={() => {
+                    const allChecked = activeGroup.pairs.every((item) => item.selected);
+                    void selectAllBoxes(activeGroup.shipment_id, !allChecked);
+                  }}
+                >
+                  {activeGroup.pairs.every((item) => item.selected) ? "取消全选" : "全选"}
+                </Button>
+              )}
             </div>
             <Stack gap={6}>
               {activeGroup.pairs.map((p) => {
                 const active = activePair?.box_index === p.box_index;
+                const pairKey = `${activeGroup.shipment_id}:${p.box_index}`;
+                const isCustom = boxFbaCopies[pairKey] !== undefined || boxCarrierCopies[pairKey] !== undefined;
+                const curFba = p.fba_copies ?? fbaCopies;
+                const curCar = p.carrier_copies ?? carrierCopies;
                 return (
                   <Paper
                     key={p.box_index}
@@ -361,7 +392,7 @@ export function BoxStudio() {
                     }}
                     onClick={() => setActiveBoxIndex(p.box_index)}
                   >
-                    <Group justify="space-between" wrap="nowrap">
+                    <Group justify="space-between" wrap="nowrap" mb={4}>
                       <Group gap={6}>
                         <Checkbox
                           aria-label={`勾选第 ${p.box_index} 箱`}
@@ -372,17 +403,62 @@ export function BoxStudio() {
                         <Text size="xs" fw={600}>
                           第 {p.box_index} 箱
                         </Text>
+                        {isCustom && (
+                          <Badge size="xs" variant="light" color="orange">
+                            自定义
+                          </Badge>
+                        )}
                       </Group>
-                      <NumberInput
-                        aria-label={`第 ${p.box_index} 箱套数`}
-                        size="xs"
-                        w={62}
-                        min={1}
-                        max={20}
-                        value={p.copies}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(v) => void setSingleBoxCopies(activeGroup.shipment_id, p.box_index, Number(v) || 1)}
-                      />
+                      {isCustom && (
+                        <Tooltip label="恢复为全局配比">
+                          <ActionIcon
+                            size="xs"
+                            variant="subtle"
+                            color="gray"
+                            aria-label={`恢复第 ${p.box_index} 箱默认配比`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void resetBoxPairCustomCopies(activeGroup.shipment_id, p.box_index);
+                            }}
+                          >
+                            <RotateCcw size={12} />
+                          </ActionIcon>
+                        </Tooltip>
+                      )}
+                    </Group>
+                    <Group gap={6} grow wrap="nowrap" onClick={(e) => e.stopPropagation()}>
+                      <Group gap={4} wrap="nowrap">
+                        <Badge size="xs" color="blue" variant="light" style={{ flexShrink: 0 }}>
+                          FBA
+                        </Badge>
+                        <NumberInput
+                          aria-label={`第 ${p.box_index} 箱 FBA 张数`}
+                          size="xs"
+                          min={0}
+                          max={20}
+                          disabled={workMode === "carrier_only"}
+                          value={curFba}
+                          onChange={(v) =>
+                            void setSingleBoxPairCopies(activeGroup.shipment_id, p.box_index, Number(v) || 0, curCar)
+                          }
+                        />
+                      </Group>
+                      <Group gap={4} wrap="nowrap">
+                        <Badge size="xs" color="green" variant="light" style={{ flexShrink: 0 }}>
+                          唛
+                        </Badge>
+                        <NumberInput
+                          aria-label={`第 ${p.box_index} 箱箱唛张数`}
+                          size="xs"
+                          min={0}
+                          max={20}
+                          disabled={workMode === "fba_only"}
+                          value={curCar}
+                          onChange={(v) =>
+                            void setSingleBoxPairCopies(activeGroup.shipment_id, p.box_index, curFba, Number(v) || 0)
+                          }
+                        />
+                      </Group>
                     </Group>
                   </Paper>
                 );
@@ -587,51 +663,106 @@ export function BoxStudio() {
         </div>
       </div>
 
-      {/* 右栏：套数、队列、脱敏规则与出纸 */}
+      {/* 右栏：独立配比组合、队列、脱敏规则与出纸 */}
       <div className={classes.rightPanel}>
         <div className={classes.secTitle}>
-          <span>每箱打印套数（建议 3~5 面）</span>
-          <Badge size="xs" color="blue" variant="light">
-            共 {pairing.total_sheets} 张
-          </Badge>
+          <span>每箱标签配比</span>
+          <Group gap={4} wrap="nowrap">
+            <Badge size="xs" color="teal" variant="light" title="常用配比组合、顺序与脱敏规则已自动写入本机配置">
+              {prefsSavedAt > 0 ? "已记住偏好" : "默认记忆"}
+            </Badge>
+            <Badge size="xs" color="blue" variant="light">
+              共 {pairing.total_sheets} 张
+            </Badge>
+          </Group>
         </div>
 
-        <Group gap={6} mb="sm" wrap="nowrap">
-          <SegmentedControl
+        <Group gap={4} mb="xs" wrap="wrap">
+          {[
+            { fba: 2, car: 1, label: "2+1" },
+            { fba: 2, car: 2, label: "2+2" },
+            { fba: 4, car: 2, label: "4+2" },
+            { fba: 4, car: 4, label: "4+4" },
+            { fba: 1, car: 1, label: "1+1" },
+          ].map((preset) => {
+            const matched = fbaCopies === preset.fba && carrierCopies === preset.car;
+            return (
+              <Button
+                key={preset.label}
+                size="compact-xs"
+                variant={matched ? "filled" : "light"}
+                title={`默认每箱 FBA ${preset.fba} 张 + 货代箱唛 ${preset.car} 张`}
+                onClick={() => void setCopyCombo(preset.fba, preset.car)}
+              >
+                {preset.label}
+              </Button>
+            );
+          })}
+        </Group>
+
+        <SimpleGrid cols={2} spacing={6} mb="sm">
+          <NumberInput
+            aria-label="全局每箱 FBA 外箱张数"
+            label={
+              <Group gap={4}>
+                <span style={{ width: 6, height: 6, borderRadius: 3, background: "#2563eb", display: "inline-block" }} />
+                <span>FBA 外箱/箱</span>
+              </Group>
+            }
             size="xs"
-            style={{ flex: 1 }}
-            value={String(defaultCopies)}
-            onChange={(v) => void setDefaultCopies(Number(v))}
-            data={[
-              { value: "1", label: "1套" },
-              { value: "3", label: "3套" },
-              { value: "4", label: "4套" },
-              { value: "5", label: "5套" },
-            ]}
+            min={0}
+            max={20}
+            disabled={workMode === "carrier_only"}
+            value={fbaCopies}
+            onChange={(v) => void setCopyCombo(Number(v) || 0, carrierCopies)}
           />
           <NumberInput
-            aria-label="自定义每箱打印套数"
+            aria-label="全局每箱货代箱唛张数"
+            label={
+              <Group gap={4}>
+                <span style={{ width: 6, height: 6, borderRadius: 3, background: "#16a34a", display: "inline-block" }} />
+                <span>货代箱唛/箱</span>
+              </Group>
+            }
             size="xs"
-            w={62}
-            min={1}
+            min={0}
             max={20}
-            value={defaultCopies}
-            onChange={(v) => void setDefaultCopies(Number(v) || 1)}
+            disabled={workMode === "fba_only"}
+            value={carrierCopies}
+            onChange={(v) => void setCopyCombo(fbaCopies, Number(v) || 0)}
           />
-        </Group>
+        </SimpleGrid>
 
         <Divider my="xs" />
 
         <div className={classes.secTitle}>
           <span>出纸顺序</span>
+          {pairing.queue.length > 0 && (
+            <Text size="xs" c="dimmed" ff="var(--mono)">
+              F:{pairing.queue.filter((q) => q.kind === "fba").length} · M:{pairing.queue.filter((q) => q.kind === "carrier").length}
+            </Text>
+          )}
         </div>
-        <Radio.Group value={orderMode} onChange={(v) => void setOrderMode(v as typeof orderMode)}>
-          <Stack gap={6} mb="xs">
-            <Radio size="xs" value="interleave" label="贴面交替：[外箱1, 箱唛1] × 套数" />
-            <Radio size="xs" value="per_box_group" label="同箱紧邻：[外箱1×套数, 箱唛1×套数]" />
-            <Radio size="xs" value="split_all" label="分组先后：先打全部外箱，再打箱唛" />
-          </Stack>
-        </Radio.Group>
+        {(() => {
+          const rounds = Math.max(1, Math.min(3, Math.max(fbaCopies, carrierCopies)));
+          const seqTokens: string[] = [];
+          for (let r = 1; r <= rounds; r += 1) {
+            if (r <= fbaCopies) seqTokens.push("F1");
+            if (r <= carrierCopies) seqTokens.push("M1");
+          }
+          if (Math.max(fbaCopies, carrierCopies) > 3) seqTokens.push("...");
+          const interleaveExample = seqTokens.length ? `[${seqTokens.join(", ")}]` : "[F1, M1]";
+          const perBoxExample = `[F1×${fbaCopies}, M1×${carrierCopies}]`;
+          return (
+            <Radio.Group value={orderMode} onChange={(v) => void setOrderMode(v as typeof orderMode)}>
+              <Stack gap={6} mb="xs">
+                <Radio size="xs" value="per_box_group" label={`按箱成组：${perBoxExample} 连续出纸`} />
+                <Radio size="xs" value="interleave" label={`轮流交替：${interleaveExample} 逐轮交替`} />
+                <Radio size="xs" value="split_all" label="分组先后：先打全部 FBA，再打全部箱唛" />
+              </Stack>
+            </Radio.Group>
+          );
+        })()}
 
         <Paper withBorder p={6} radius="sm" bg="var(--bg-subtle)" style={{ maxHeight: 84, overflowY: "auto" }}>
           <Group gap={4}>
@@ -640,6 +771,11 @@ export function BoxStudio() {
                 {q.seq}.{q.label}
               </Badge>
             ))}
+            {pairing.queue.length > 32 && (
+              <Badge size="xs" variant="outline" color="gray">
+                +{pairing.queue.length - 32} 张...
+              </Badge>
+            )}
           </Group>
         </Paper>
 

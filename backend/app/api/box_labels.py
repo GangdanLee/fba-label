@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import re
 import uuid
 
@@ -19,6 +20,7 @@ from app.engines.fba_processor import process_fba_pdf
 from app.engines.fnsku_engine import _draw_element
 from app.engines.pairing_engine import pair_and_validate
 from app.models.schemas import (
+    BoxPrintPreferences,
     CanvasElement,
     CarrierProcessResponse,
     CarrierRule,
@@ -229,3 +231,27 @@ async def test_carrier_rules_endpoint(req: CarrierRuleTestRequest) -> dict[str, 
         _validate_rule_regex(f"规则「{r.name}」箱号", r.ctn_regex)
     rules = req.rules if req.rules is not None else db.list_carrier_rules(include_disabled=False)
     return preview_carrier_rules_on_text(req.sample_text, req.file_name, rules)
+
+
+_BOX_PREFS_KEY = "box_print_preferences"
+
+
+@router.get("/preferences", response_model=BoxPrintPreferences)
+async def get_box_preferences() -> BoxPrintPreferences:
+    """获取持久化的外箱打印配比组合、出纸顺序与脱敏规则默认偏好。"""
+    raw = db.get_app_state(_BOX_PREFS_KEY, "")
+    if not raw:
+        return BoxPrintPreferences()
+    try:
+        return BoxPrintPreferences.model_validate_json(raw)
+    except Exception:
+        return BoxPrintPreferences()
+
+
+@router.put("/preferences", response_model=BoxPrintPreferences)
+async def save_box_preferences(prefs: BoxPrintPreferences) -> BoxPrintPreferences:
+    """将用户常用的 FBA / 货代箱唛张数配比、出纸顺序与脱敏规则默认留存到 SQLite。"""
+    if prefs.default_fba_copies == 0 and prefs.default_carrier_copies == 0:
+        raise HTTPException(status_code=400, detail="FBA 外箱与货代箱唛默认张数不能同时为 0")
+    db.set_app_state(_BOX_PREFS_KEY, json.dumps(prefs.model_dump(), ensure_ascii=False))
+    return prefs

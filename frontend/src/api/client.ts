@@ -1,5 +1,6 @@
 import type {
   BatchSkuItem,
+  BoxPrintPreferences,
   CalibrationProfile,
   CanvasElement,
   CarrierRule,
@@ -58,6 +59,10 @@ export async function pairBoxes(payload: {
   order_mode: "interleave" | "per_box_group" | "split_all";
   default_copies: number;
   box_copies: Record<string, number>;
+  default_fba_copies?: number;
+  default_carrier_copies?: number;
+  box_fba_copies?: Record<string, number>;
+  box_carrier_copies?: Record<string, number>;
   selected_keys: Record<string, boolean>;
   force_unlocked: boolean;
   active_shipment_id?: string | null;
@@ -329,5 +334,17 @@ export async function renderFnskuBatch(payload: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchBoxPreferences(): Promise<BoxPrintPreferences> {
+  return apiJson<BoxPrintPreferences>("/api/box/preferences");
+}
+
+export async function saveBoxPreferences(prefs: BoxPrintPreferences): Promise<BoxPrintPreferences> {
+  return apiJson<BoxPrintPreferences>("/api/box/preferences", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(prefs),
   });
 }

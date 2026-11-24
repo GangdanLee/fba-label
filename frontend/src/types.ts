@@ -102,6 +102,19 @@ export interface PairingPairItem {
   carrier_box: CarrierBoxMeta | null;
   selected: boolean;
   copies: number;
+  fba_copies: number;
+  carrier_copies: number;
+}
+
+export interface BoxPrintPreferences {
+  default_fba_copies: number;
+  default_carrier_copies: number;
+  order_mode: "interleave" | "per_box_group" | "split_all";
+  work_mode: "paired" | "fba_only" | "carrier_only";
+  redact_ship_from: boolean;
+  redact_fba_company: boolean;
+  redact_headers: boolean;
+  auto_add_mic: boolean;
 }
 
 export interface PairingGroup {
@@ -167,6 +180,8 @@ export interface CalibrationProfile {
   connection_type: "os_queue" | "network_tcp";
   network_host: string;
   network_port: number;
+  tspl_direction?: 0 | 1;
+  invert_bitmap?: boolean;
 }
 
 export interface PrintBatchRecord {
@@ -196,6 +211,8 @@ export interface PrinterDevice {
   suggested_protocol: "tspl" | "zpl" | "os_driver";
   suggested_dpi: 203 | 300;
   is_thermal_hint: boolean;
+  brand_label?: string;
+  usage_tip?: string;
 }
 
 export interface CarrierRule {

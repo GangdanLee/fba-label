@@ -37,16 +37,16 @@ def build_print_queue(
     work_mode: str,
     order_mode: str,
 ) -> list[PrintQueueItem]:
-    """根据作业模式与出纸顺序生成最终有序队列。"""
+    """根据作业模式、独立张数配比（如 FBA 2 + 箱唛 1）与出纸顺序生成最终有序队列。"""
     queue: list[PrintQueueItem] = []
     seq = 1
-    active_pairs = [p for p in group.pairs if p.selected and p.copies > 0]
+    active_pairs = [p for p in group.pairs if p.selected and (p.fba_copies > 0 or p.carrier_copies > 0)]
 
     if work_mode == "fba_only":
         for p in active_pairs:
-            if p.fba_box is None:
+            if p.fba_box is None or p.fba_copies <= 0:
                 continue
-            for copy_no in range(1, p.copies + 1):
+            for copy_no in range(1, p.fba_copies + 1):
                 queue.append(
                     PrintQueueItem(
                         seq=seq,
@@ -64,9 +64,9 @@ def build_print_queue(
 
     if work_mode == "carrier_only":
         for p in active_pairs:
-            if p.carrier_box is None:
+            if p.carrier_box is None or p.carrier_copies <= 0:
                 continue
-            for copy_no in range(1, p.copies + 1):
+            for copy_no in range(1, p.carrier_copies + 1):
                 queue.append(
                     PrintQueueItem(
                         seq=seq,
@@ -82,63 +82,102 @@ def build_print_queue(
                 seq += 1
         return queue
 
-    # paired 成对模式
+    # paired 成对模式（兼容非对称配比，例如 FBA 2 + 箱唛 1）
     valid_pairs = [p for p in active_pairs if p.fba_box is not None and p.carrier_box is not None]
     if order_mode == "interleave":
         for p in valid_pairs:
             assert p.fba_box and p.carrier_box
-            for copy_no in range(1, p.copies + 1):
-                queue.append(
-                    PrintQueueItem(
-                        seq=seq, kind="fba", shipment_id=group.shipment_id, box_index=p.box_index,
-                        copy_no=copy_no, page_index=p.fba_box.page_index, label=f"F{p.box_index}", file_id=p.fba_box.file_id,
+            max_rounds = max(p.fba_copies, p.carrier_copies)
+            for round_no in range(1, max_rounds + 1):
+                if round_no <= p.fba_copies:
+                    queue.append(
+                        PrintQueueItem(
+                            seq=seq,
+                            kind="fba",
+                            shipment_id=group.shipment_id,
+                            box_index=p.box_index,
+                            copy_no=round_no,
+                            page_index=p.fba_box.page_index,
+                            label=f"F{p.box_index}",
+                            file_id=p.fba_box.file_id,
+                        )
                     )
-                )
-                seq += 1
-                queue.append(
-                    PrintQueueItem(
-                        seq=seq, kind="carrier", shipment_id=group.shipment_id, box_index=p.box_index,
-                        copy_no=copy_no, page_index=p.carrier_box.page_index, label=f"M{p.box_index}", file_id=p.carrier_box.file_id,
+                    seq += 1
+                if round_no <= p.carrier_copies:
+                    queue.append(
+                        PrintQueueItem(
+                            seq=seq,
+                            kind="carrier",
+                            shipment_id=group.shipment_id,
+                            box_index=p.box_index,
+                            copy_no=round_no,
+                            page_index=p.carrier_box.page_index,
+                            label=f"M{p.box_index}",
+                            file_id=p.carrier_box.file_id,
+                        )
                     )
-                )
-                seq += 1
+                    seq += 1
     elif order_mode == "per_box_group":
         for p in valid_pairs:
             assert p.fba_box and p.carrier_box
-            for copy_no in range(1, p.copies + 1):
+            for copy_no in range(1, p.fba_copies + 1):
                 queue.append(
                     PrintQueueItem(
-                        seq=seq, kind="fba", shipment_id=group.shipment_id, box_index=p.box_index,
-                        copy_no=copy_no, page_index=p.fba_box.page_index, label=f"F{p.box_index}", file_id=p.fba_box.file_id,
+                        seq=seq,
+                        kind="fba",
+                        shipment_id=group.shipment_id,
+                        box_index=p.box_index,
+                        copy_no=copy_no,
+                        page_index=p.fba_box.page_index,
+                        label=f"F{p.box_index}",
+                        file_id=p.fba_box.file_id,
                     )
                 )
                 seq += 1
-            for copy_no in range(1, p.copies + 1):
+            for copy_no in range(1, p.carrier_copies + 1):
                 queue.append(
                     PrintQueueItem(
-                        seq=seq, kind="carrier", shipment_id=group.shipment_id, box_index=p.box_index,
-                        copy_no=copy_no, page_index=p.carrier_box.page_index, label=f"M{p.box_index}", file_id=p.carrier_box.file_id,
+                        seq=seq,
+                        kind="carrier",
+                        shipment_id=group.shipment_id,
+                        box_index=p.box_index,
+                        copy_no=copy_no,
+                        page_index=p.carrier_box.page_index,
+                        label=f"M{p.box_index}",
+                        file_id=p.carrier_box.file_id,
                     )
                 )
                 seq += 1
     else:  # split_all
         for p in valid_pairs:
             assert p.fba_box
-            for copy_no in range(1, p.copies + 1):
+            for copy_no in range(1, p.fba_copies + 1):
                 queue.append(
                     PrintQueueItem(
-                        seq=seq, kind="fba", shipment_id=group.shipment_id, box_index=p.box_index,
-                        copy_no=copy_no, page_index=p.fba_box.page_index, label=f"F{p.box_index}", file_id=p.fba_box.file_id,
+                        seq=seq,
+                        kind="fba",
+                        shipment_id=group.shipment_id,
+                        box_index=p.box_index,
+                        copy_no=copy_no,
+                        page_index=p.fba_box.page_index,
+                        label=f"F{p.box_index}",
+                        file_id=p.fba_box.file_id,
                     )
                 )
                 seq += 1
         for p in valid_pairs:
             assert p.carrier_box
-            for copy_no in range(1, p.copies + 1):
+            for copy_no in range(1, p.carrier_copies + 1):
                 queue.append(
                     PrintQueueItem(
-                        seq=seq, kind="carrier", shipment_id=group.shipment_id, box_index=p.box_index,
-                        copy_no=copy_no, page_index=p.carrier_box.page_index, label=f"M{p.box_index}", file_id=p.carrier_box.file_id,
+                        seq=seq,
+                        kind="carrier",
+                        shipment_id=group.shipment_id,
+                        box_index=p.box_index,
+                        copy_no=copy_no,
+                        page_index=p.carrier_box.page_index,
+                        label=f"M{p.box_index}",
+                        file_id=p.carrier_box.file_id,
                     )
                 )
                 seq += 1
@@ -173,10 +212,17 @@ def pair_and_validate(req: PairingRequest) -> PairingResponse:
         c_map = {item.box_index: item for item in c_list}
         box_indices = sorted(set(f_map.keys()) | set(c_map.keys()))
 
+        eff_default_fba = req.default_fba_copies if req.default_fba_copies is not None else req.default_copies
+        eff_default_car = req.default_carrier_copies if req.default_carrier_copies is not None else req.default_copies
+
         pairs: list[PairingPairItem] = []
         for idx in box_indices:
             sel_key = f"{sid}:{idx}"
-            copies = req.box_copies.get(sel_key, req.default_copies)
+            fallback_box = req.box_copies.get(sel_key)
+            raw_fba = req.box_fba_copies.get(sel_key, fallback_box if fallback_box is not None else eff_default_fba)
+            raw_car = req.box_carrier_copies.get(sel_key, fallback_box if fallback_box is not None else eff_default_car)
+            fba_copies = max(0, min(20, int(raw_fba)))
+            car_copies = max(0, min(20, int(raw_car)))
             selected = req.selected_keys.get(sel_key, True)
             pairs.append(
                 PairingPairItem(
@@ -184,7 +230,9 @@ def pair_and_validate(req: PairingRequest) -> PairingResponse:
                     fba_box=f_map.get(idx),
                     carrier_box=c_map.get(idx),
                     selected=selected,
-                    copies=max(1, int(copies)),
+                    copies=max(fba_copies, car_copies),
+                    fba_copies=fba_copies,
+                    carrier_copies=car_copies,
                 )
             )
 

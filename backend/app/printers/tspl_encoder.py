@@ -31,8 +31,8 @@ class DecodedTsplCommand:
     image: Image.Image
 
 
-def pil_1bit_to_tspl_bytes(img: Image.Image) -> tuple[bytes, int, int]:
-    """将图像规范化为纯 1-bit 位图并输出 TSPL BITMAP 行字节流（0=黑点打印，1=白点留空）。"""
+def pil_1bit_to_tspl_bytes(img: Image.Image, invert: bool = False) -> tuple[bytes, int, int]:
+    """将图像规范化为纯 1-bit 位图并输出 TSPL BITMAP 行字节流（默认 0=黑点打印，1=白点留空）。"""
     bw = img.convert("1", dither=Image.Dither.NONE)
     w, h = bw.size
     w_bytes = math.ceil(w / 8)
@@ -44,6 +44,8 @@ def pil_1bit_to_tspl_bytes(img: Image.Image) -> tuple[bytes, int, int]:
         bw = padded
 
     raw = bw.tobytes()
+    if invert:
+        raw = bytes(b ^ 0xFF for b in raw)
     expected_len = w_bytes * h
     assert len(raw) == expected_len, f"TSPL bitmap size mismatch: {len(raw)} != {expected_len}"
     return raw, w_bytes, h
@@ -73,24 +75,40 @@ def encode_image_to_tspl(
     copies: int = 1,
     offset_x_mm: float = 0.0,
     offset_y_mm: float = 0.0,
+    invert_bitmap: bool = False,
 ) -> bytes:
-    """将单张标签图像编码为完整的 TSC/TSPL2 兼容裸指令字节流（支持 203/300dpi）。"""
+    """将单张标签图像编码为完整的 TSC/TSPL2 兼容裸指令字节流（支持 203/300dpi 及芯烨/佳博安全偏移）。"""
     dpm = dots_per_mm_for_dpi(dpi)
     target_w_dots = max(8, mm_to_dots(width_mm, dots_per_mm=dpm))
     target_h_dots = max(8, mm_to_dots(height_mm, dots_per_mm=dpm))
     img = _normalize_canvas_size(img, target_w_dots, target_h_dots)
 
-    bitmap_bytes, w_bytes, h_dots = pil_1bit_to_tspl_bytes(img)
     x_dots = mm_to_dots(offset_x_mm, dots_per_mm=dpm)
     y_dots = mm_to_dots(offset_y_mm, dots_per_mm=dpm)
+
+    # 佳博/芯烨等兼容固件对 BITMAP 传入负坐标可能忽略或错乱，负偏移改在白底画布内像素平移
+    if x_dots < 0 or y_dots < 0:
+        shift_x = x_dots if x_dots < 0 else 0
+        shift_y = y_dots if y_dots < 0 else 0
+        shifted = Image.new("1", img.size, color=255)
+        shifted.paste(img.convert("1", dither=Image.Dither.NONE), (shift_x, shift_y))
+        img = shifted
+        if x_dots < 0:
+            x_dots = 0
+        if y_dots < 0:
+            y_dots = 0
+
+    bitmap_bytes, w_bytes, h_dots = pil_1bit_to_tspl_bytes(img, invert=invert_bitmap)
 
     header = (
         f"SIZE {width_mm:.1f} mm, {height_mm:.1f} mm\r\n"
         f"GAP {gap_mm:.1f} mm, 0 mm\r\n"
-        f"DIRECTION {int(direction)}\r\n"
+        "REFERENCE 0,0\r\n"
+        "SET TEAR ON\r\n"
+        f"DIRECTION {1 if int(direction) != 0 else 0}\r\n"
         f"SPEED {int(speed)}\r\n"
         f"DENSITY {int(density)}\r\n"
-        f"CLS\r\n"
+        "CLS\r\n"
         f"BITMAP {x_dots},{y_dots},{w_bytes},{h_dots},0,"
     ).encode("ascii")
 
@@ -109,6 +127,8 @@ def encode_pdf_pages_to_tspl(
     copies_per_page: int = 1,
     offset_x_mm: float = 0.0,
     offset_y_mm: float = 0.0,
+    direction: int = 1,
+    invert_bitmap: bool = False,
 ) -> bytes:
     """将多页矢量 PDF 按指定 DPI 逐页光栅化为 1-bit 位图并串联封装为 TSPL2 字节流。"""
     eng = PyMuPDFEngine()
@@ -125,9 +145,11 @@ def encode_pdf_pages_to_tspl(
                 gap_mm=gap_mm,
                 density=density,
                 speed=speed,
+                direction=direction,
                 copies=copies_per_page,
                 offset_x_mm=offset_x_mm,
                 offset_y_mm=offset_y_mm,
+                invert_bitmap=invert_bitmap,
             )
         )
     return b"".join(chunks)

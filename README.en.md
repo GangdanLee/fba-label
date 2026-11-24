@@ -5,7 +5,7 @@
 </p>
 
 <p align="left">
-  <a href="https://github.com/GangdanLee/fba-label/releases"><img src="https://img.shields.io/badge/release-v0.3.0-2563eb" alt="Release v0.3.0"></a>
+  <a href="https://github.com/GangdanLee/fba-label/releases"><img src="https://img.shields.io/badge/release-v0.4.0-2563eb" alt="Release v0.4.0"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-green" alt="GNU AGPL-3.0 License"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-111827" alt="macOS and Windows">
   <img src="https://img.shields.io/badge/thermal-TSPL2%20%7C%20ZPL%20II%20%7C%20TCP%209100-0d9488" alt="TSPL2 ZPL II TCP 9100">
@@ -46,12 +46,12 @@
 
 ## Why FBA Label Studio? (Comparison)
 
-| Feature | FBA Label Studio (`v0.3.0`) | Manual PDF Editor + OpenLabel+ / BarTender | Online FBA Label Web Tools |
+| Feature | FBA Label Studio (`v0.4.0`) | Manual PDF Editor + OpenLabel+ / BarTender | Online FBA Label Web Tools |
 | :--- | :--- | :--- | :--- |
 | **Data Privacy** | **100% offline local SQLite**, zero uploads | Local but fragmented multi-app copy-pasting | Uploads unredacted seller addresses/ASNs to remote servers |
 | **Box Label Redaction** | **True text-stream removal (`apply_redactions`)**, `get_text()` = 0 hits | White overlay boxes leave hidden selectable text in the PDF | Usually rasterizes entire page, blurring barcodes |
 | **4×6 Crop & Center Precision** | Auto-trims whitespace to `98×98mm` safe frame (`< 0.05 pt` tolerance) | Manual screenshots and trial-and-error scaling | Rigid fixed templates often clip multi-up layouts |
-| **FBA + Carrier Pairing** | Grouped by `shipment_id`, validates warehouse & carton range `1..N` | Error-prone visual side-by-side checking | Rarely supports forwarder label pairing |
+| **FBA + Carrier Pairing** | Grouped by `shipment_id`, validates warehouse & carton `1..N`, **independent `FBA + carrier` copy combos with persistence** | Error-prone visual side-by-side checking | Rarely supports forwarder pairing or flexible per-side ratios |
 | **CSV Batch 2-Up & Anti-Mix** | Multi-encoding CSV/TSV batching + **odd-qty right-column blanking** | Complex mail-merge database setup | Rarely supports 2-up FNSKU + compliance templates |
 | **Thermal Barcode Sharpness** | Native **TSPL2 / ZPL II** 1-bit bitmaps (`203/300 dpi`), integer-dot modules | OS driver raster scaling can blur narrow bars at 203 dpi | Generic PDF output only |
 | **Licensing & Cost** | **Free & Open Source (`AGPL-3.0`)**, zero-install binaries available | Paid commercial licenses | Monthly SaaS subscriptions |
@@ -63,15 +63,16 @@
 1. **Semantic FBA Box Label Redaction & `100×100mm` Auto-Crop**
    - Supports both English and Chinese Amazon FBA layouts (automatically adapting to swapped left/right `SHIP FROM` vs. `SHIP TO` columns).
    - Physically strips sender details and `FBA:` company name while keeping destination FC details, auto-centers to `98×98mm`, and optionally stamps `Made In China` without overlapping existing text.
-2. **Shipment-Isolated Pairing, Ordering & Custom Carrier Regex Engine**
+2. **Shipment-Isolated Pairing, Independent Copy Combos & Preference Persistence**
    - Strictly isolates multiple concurrent FBA shipments by `shipment_id`; verifies warehouse codes and full `1..N` carton coverage; supports manual shipment assignment for unnumbered carrier labels.
-   - Offers **Paired**, **FBA-Only**, and **Carrier-Only** modes with **Interleaved**, **Per-Box Grouped**, or **Split** print ordering plus single-box reprint snapshots.
+   - **Flexible Independent Copy Combos (Auto-Persisted)**: Configure separate copy counts for FBA box vs. carrier labels (one-click `2+1`, `2+2`, `4+2`, `4+4`, `1+1` presets, per-side steppers, and per-box overrides), with **Per-Box Grouped**, **Interleaved**, or **Split** print ordering and single-box reprint snapshots; copy ratios, order mode, work mode, and redaction flags persist automatically in local SQLite (`GET/PUT /api/box/preferences`).
    - Includes a live GUI **Carrier Regex Rule Manager & Test Runner** stored in SQLite (`carrier_rules`).
 3. **Vector Millimeter Label Designer & CSV Batch FNSKU Engine**
    - Built-in millimeter-accurate canvas editor (`Barcode1D` with synced human-readable text, `QR Code`, `Text`, `Rect`, `Line`, `Image`, compliance badges) and `Amazon Product PDF` importer (normalizes `新品` → `New - ` and full-width punctuation).
    - Batch-render hundreds of SKUs from UTF-8, UTF-8-BOM, GB18030, or TSV spreadsheets with per-element style inheritance and optional SKU-break blanking.
-4. **Universal Printer Abstraction (`TSPL2` / `ZPL II` / OS Driver / `TCP 9100`)**
-   - Emits crisp 1-bit `TSPL2` (`BITMAP`) and `ZPL II` (`^GF` ASCII hex) streams at `203` or `300 dpi`, routes over macOS CUPS (`lp -o raw`), Windows `win32print` RAW/GDI, or direct LAN `TCP 9100` sockets.
+4. **Universal Printer Routing (`TSPL2` / `ZPL II` / OS Driver / `TCP 9100`) & Xprinter/Gprinter Hardening**
+   - Emits crisp 1-bit `TSPL2` (`BITMAP`) and `ZPL II` (`^GF` ASCII hex) streams at `203` or `300 dpi` for TSC, **Xprinter (`XP-420B`, etc.)**, **Gprinter (`GP-1324D` / `GP-1134T`, etc.)**, 4BARCODE, Zebra, Rollo, and HPRT over macOS CUPS (`lp -o raw`), Windows `win32print` RAW/GDI, or direct LAN `TCP 9100` sockets.
+   - **Xprinter / Gprinter Compatibility Hardening**: Automatically matches Chinese/English printer queues (including `XP420B` / `GP-1324D` and 300 dpi models), injects `REFERENCE 0,0` and `SET TEAR ON` to clear leftover third-party offsets, shifts negative X/Y offsets onto a clean white canvas, and exposes collapsible tuning (`DIRECTION 0/1`, `SPEED 1~8`, and `invert_bitmap` polarity compensation).
    - **Custom Roll Profiles**: Add custom dimensions (presets for `40×30mm 2-up`, `60×40mm`, `70×50mm`, `100×150mm` single-row, or arbitrary W×H) and export `zxing-cpp`-verified calibration ruler PDFs.
 
 ---
@@ -80,7 +81,7 @@
 
 | Protocol / Channel | Compatible Thermal & Desktop Printers | Supported DPI | Transport |
 | :--- | :--- | :--- | :--- |
-| **TSPL2 Raw** | TSC (TTP-244 Pro, etc.), Xprinter, Gprinter, HPRT, Rollo | `203` / `300 dpi` | USB / OS Raw Queue (`lp -o raw` / `win32print`), TCP 9100 |
+| **TSPL2 Raw** | TSC (TTP-244 Pro, etc.), Xprinter (`XP-420B`, etc.), Gprinter (`GP-1324D` / `GP-1134T`, etc.), 4BARCODE, HPRT, Rollo | `203` / `300 dpi` | USB / OS Raw Queue (`lp -o raw` / `win32print`), TCP 9100 |
 | **ZPL II Raw** | Zebra (ZD421, ZP450, GK888t, industrial models) | `203` / `300 dpi` | USB / OS Raw Queue, LAN TCP 9100 |
 | **OS Native Driver** | Brother QL series, office inkjet/laser, or AirPrint-only queues | Auto | macOS CUPS PDF / Windows Win32 GDI |
 | **Vector PDF Export** | Any printer, 3PL warehouse handoff, or batch archive | Lossless Vector | Direct download + SQLite reprint snapshot |
@@ -126,8 +127,8 @@ cd backend
 ### Package Standalone Binary Release
 ```bash
 cd backend && uv pip install -e ".[dev,build]" && cd ..
-backend/.venv/bin/python scripts/build_release.py --version v0.3.0
-backend/.venv/bin/python scripts/smoke_test_release.py release_out/FBA-Label-Studio-v0.3.0-macos-arm64.zip
+backend/.venv/bin/python scripts/build_release.py --version v0.4.0
+backend/.venv/bin/python scripts/smoke_test_release.py release_out/FBA-Label-Studio-v0.4.0-macos-arm64.zip
 ```
 
 ---
@@ -143,8 +144,8 @@ Generic OS print drivers resample vector bars onto a `203 dpi (8 dots/mm)` grid 
 **How does CSV batch printing handle odd quantities on 2-up (`50×30mm`) thermal rolls?**  
 Enable **"Force row break between SKUs"** (enabled by default in the batch modal). When SKU A requests an odd count (e.g., 3 labels), the right slot on row 2 remains blank and SKU B starts cleanly on row 3, preventing warehouse staff from mixing labels across SKUs.
 
-**Can I use non-TSC thermal printers such as Zebra, Rollo, Xprinter, or HPRT?**  
-Yes. Since `v0.2.0`, the printer router natively encodes both **TSPL2** and **ZPL II** at `203` or `300 dpi` over USB queues, Windows `win32print`, macOS CUPS, or direct LAN `TCP 9100`, with OS GDI/PDF fallback for non-raw drivers.
+**Can I use non-TSC thermal printers such as Xprinter XP-420B, Gprinter, Zebra, Rollo, or HPRT?**  
+Yes. FBA Label Studio natively encodes both **TSPL2** (TSC / Xprinter XP-420B / Gprinter GP-1324D & GP-1134T / 4BARCODE / HPRT / Rollo) and **ZPL II** (Zebra) at `203` or `300 dpi` over USB queues, Windows `win32print`, macOS CUPS, or direct LAN `TCP 9100`, with OS GDI/PDF fallback. It also injects `REFERENCE 0,0` & `SET TEAR ON`, shifts negative offsets onto a clean canvas, and offers collapsible tuning for direction, speed, and bitmap inversion.
 
 **What if my freight forwarder uses a non-standard carton label format?**  
 Click **解析规则 (Parser Rules)** in the box workbench to add custom regex patterns for Shipment ID, Warehouse Code, and Carton `X of Y`, and verify them immediately in the built-in live sample text tester.

@@ -9,7 +9,7 @@ import tempfile
 
 from app.models.schemas import PrinterDevice
 from app.printers.base import PrinterAdapter
-from app.printers.registry import infer_printer_hints
+from app.printers.registry import infer_printer_brand_note, infer_printer_hints
 
 
 class MacOSCupsAdapter(PrinterAdapter):
@@ -51,6 +51,7 @@ class MacOSCupsAdapter(PrinterAdapter):
                 else:
                     status = "ready"
                 sugg_proto, sugg_dpi, is_thermal = infer_printer_hints(name)
+                brand_label, usage_tip = infer_printer_brand_note(name)
                 printers.append(
                     PrinterDevice(
                         name=name,
@@ -62,6 +63,8 @@ class MacOSCupsAdapter(PrinterAdapter):
                         suggested_protocol=sugg_proto,
                         suggested_dpi=sugg_dpi,
                         is_thermal_hint=is_thermal,
+                        brand_label=brand_label,
+                        usage_tip=usage_tip,
                     )
                 )
         except Exception:

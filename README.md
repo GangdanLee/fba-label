@@ -5,7 +5,7 @@
 </p>
 
 <p align="left">
-  <a href="https://github.com/GangdanLee/fba-label/releases"><img src="https://img.shields.io/badge/release-v0.3.0-2563eb" alt="Release v0.3.0"></a>
+  <a href="https://github.com/GangdanLee/fba-label/releases"><img src="https://img.shields.io/badge/release-v0.4.0-2563eb" alt="Release v0.4.0"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-green" alt="GNU AGPL-3.0 License"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-111827" alt="macOS and Windows">
   <img src="https://img.shields.io/badge/thermal-TSPL2%20%7C%20ZPL%20II%20%7C%20TCP%209100-0d9488" alt="TSPL2 ZPL II TCP 9100">
@@ -46,12 +46,12 @@
 
 ## 为什么选择 FBA Label Studio？（能力对比）
 
-| 核心维度 | FBA Label Studio (`v0.3.0`) | 手工 PDF 遮挡 + 通用标签软件 | 在线 FBA 标签处理网站 |
+| 核心维度 | FBA Label Studio (`v0.4.0`) | 手工 PDF 遮挡 + 通用标签软件 | 在线 FBA 标签处理网站 |
 | :--- | :--- | :--- | :--- |
 | **隐私安全性** | **100% 本地离线运行**，SQLite 仅存本机 | 本地操作但流程极繁琐 | 须上传含店铺公司名/地址的原始 PDF 至第三方服务器 |
 | **外箱敏感信息处理** | **底层 PDF 文字流真擦除 (`apply_redactions`)**，`get_text()` 零残留 | 常见“盖白框”假遮挡，底层文本仍可复制/检索 | 多数按栅格图重压，易模糊条码 |
 | **4×6 裁切与居中精度** | 全自动去除下半页留白，矢量保真等比居中 `98×98mm`（误差 `< 0.05 pt`） | 人工截图贴图，缩放易偏斜切边 | 固定模板适配，遇到拼版易切坏 |
-| **外箱 + 货代箱唛防错配对** | 按 `shipment_id` 隔离、`仓点/箱数` 三维强校验 + 无单号人工归属兜底 | 纯靠人眼逐页翻对，极易贴错箱面 | 通常不具备货代箱唛联合配对功能 |
+| **外箱 + 货代箱唛防错配对** | 按 `shipment_id` 隔离、`仓点/箱数` 强校验、**独立 `FBA + 箱唛` 张数配比持久记忆** | 纯靠人眼逐页翻对，极易贴错或漏贴几面 | 通常不具备货代箱唛联合配对与自定义配比功能 |
 | **产品标 CSV 批量与防错贴** | 支持多编码 CSV/TSV 批量套打，双排支持**跨 SKU 强制换行留白** | 手工绑定数据源配置复杂 | 几乎不支持自定义双排合规套打 |
 | **热敏清晰度与指令协议** | 原生生成 `203 / 300 dpi` 1-bit **TSPL2 / ZPL II**、整数 dot 对齐条码 | 走系统驱动光栅缩放出纸，细条易糊粘连拒扫 | 仅输出通用 PDF |
 | **授权与费用** | **完全免费开源 (`AGPL-3.0`)**，macOS / Windows 免环境包开箱即用 | 商业版按授权或年费订阅 | 按月/按次收费 |
@@ -63,15 +63,16 @@
 1. **外箱标签语义真脱敏与自动裁切（`100×100mm` 单排）**
    - 自动识别中英文互异左右分栏，物理擦除 PDF 底层文字流中的发货人地址与 `FBA:` 公司名称，完整保留亚马逊仓库地址。
    - 自动裁切多余空白区，矢量保真居中落版至 `98×98mm` 安全区；可选缺失 `Made In China` 时防压字自动补印。
-2. **以 FBA 编号为核心的防错配对与货代解析规则引擎**
+2. **以 FBA 编号为核心的防错配对、独立张数配比与偏好记忆**
    - 多票货件混导时严格按 `shipment_id` 隔离分组；覆盖 `货件号 / 仓点 / 箱号 1..N` 三维校验与未识别箱唛「人工归属货件」兜底。
-   - 支持成对配对、仅打外箱、仅打箱唛及「贴面交替 / 同箱紧邻 / 分组先后」3 种出纸排序，历史批次支持单箱精准补打。
+   - **灵活独立配比组合（自动记忆留存）**：支持「FBA 外箱 + 货代箱唛」分别设定打印张数（内置 `2+1`、`2+2`、`4+2`、`4+4`、`1+1` 一键预设，支持单边微调及按箱自定义覆写），常用配比、出纸顺序（「按箱成组 / 轮流交替 / 分组先后」）、作业模式与脱敏规则修改后自动持久化到本机 SQLite；历史批次支持单箱精准补打。
    - 内置 **货代箱唛解析规则管理与在线试跑器**，自定义规则优先于内置通用正则执行。
 3. **矢量毫米画布标签设计器 & CSV 多 SKU 批量套打**
    - 支持 `+ 新建标签`、导入亚马逊产品标 PDF（自动清洗中文成色 `新品` -> `New - ` 及全角标点）、条码与可读文本一体化同步编辑、203dpi 最小模块宽度实时预警。
    - 支持 UTF-8 / UTF-8-BOM / GB18030 / TSV 多编码 CSV 导入、下载标准模板、在线表格增改数量，并复用当前画布样式批量导出/打印。
-4. **多协议打印机路由、自定义纸卷规格 & 离线可验证闭环**
-   - **兼容协议**：`TSPL2`（TSC / 芯烨 Xprinter / 佳博 Gprinter / 汉印 HPRT / Rollo 等）、`ZPL II`（斑马 Zebra 等工业机）、系统原生驱动（macOS CUPS / Windows GDI）以及局域网 **TCP 9100** 原始套接字直连。
+4. **多协议打印机路由、芯烨/佳博深度兼容 & 自定义纸卷校准**
+   - **兼容协议**：`TSPL2`（TSC / **芯烨 Xprinter XP-420B 等** / **佳博 Gprinter GP-1324D / GP-1134T 等** / 4BARCODE / 汉印 HPRT / Rollo）、`ZPL II`（斑马 Zebra 等工业机）、系统原生驱动（macOS CUPS / Windows GDI）以及局域网 **TCP 9100** 原始套接字直连。
+   - **芯烨 / 佳博兼容加固**：自动识别 `XP420B`、`GP-1324D` 等中英文队列名并默认注入 `REFERENCE 0,0` 与 `SET TEAR ON` 消除残留偏移；负 X/Y 偏移自动转换为白底画布像素安全平移，并提供可折叠进阶微调（出纸方向 `DIRECTION 0/1`、打印速度 `SPEED 1~8`、位图反色补偿 `invert_bitmap`）。
    - **自定义纸卷校准档**：内置 `50×30mm 双排` 与 `100×100mm 单排`，支持一键新建 `40×30mm 双排`、`60×40mm 单排`、`70×50mm 单排`、`100×150mm 单排` 或任意自定义尺寸，并动态生成 `zxing-cpp` 可扫校准测试卡。
 
 ---
@@ -80,7 +81,7 @@
 
 | 输出协议 / 通道 | 适用品牌与机台示例 | 支持精度 | 连接方式 |
 | :--- | :--- | :--- | :--- |
-| **TSPL2 裸指令** | TSC (TTP-244 Pro 等)、芯烨 Xprinter、佳博 Gprinter、汉印 HPRT、Rollo | `203` / `300 dpi` | USB / 系统队列 (`lp -o raw` / `win32print`)、TCP 9100 |
+| **TSPL2 裸指令** | TSC (TTP-244 Pro 等)、芯烨 Xprinter (XP-420B 等)、佳博 Gprinter (GP-1324D / GP-1134T 等)、4BARCODE、汉印 HPRT、Rollo | `203` / `300 dpi` | USB / 系统队列 (`lp -o raw` / `win32print`)、TCP 9100 |
 | **ZPL II 裸指令** | 斑马 Zebra (ZD421 / ZP450 / GK888t 等)、ZPL 兼容工业热敏机 | `203` / `300 dpi` | USB / 系统队列、局域网 TCP 9100 |
 | **系统原生驱动** | Brother / 办公激光喷墨或 AirPrint 限制 RAW 的打印机兜底 | 驱动自适配 | macOS CUPS PDF / Windows Win32 GDI |
 | **高精矢量 PDF** | 任意打印机、外包打包点代打或归档留底 | 矢量无损 | 本地下载导出与历史快照补打 |
@@ -102,7 +103,7 @@ fba-label/
 │   │   ├── engines/                # PDF 物理脱敏、货代解析、配对、Code128 与批量渲染引擎
 │   │   ├── printers/               # TSPL2 / ZPL II 编码器、TCP 9100、CUPS / Win32 适配与扫码校验
 │   │   └── models/                 # Pydantic 领域模型
-│   └── tests/                      # 31 项 100% 合成数据离线单测与 zxing-cpp 扫码回归
+│   └── tests/                      # 35 项 100% 合成数据离线单测与 zxing-cpp 扫码回归（新增 test_v040_printers_and_combos.py）
 ├── frontend/                       # React + TypeScript + Mantine 桌面工作台源码
 ├── docs/                           # 架构设计与脱敏实机截图
 └── scripts/                        # 一键启动脚本、PyInstaller 构建与冷启动冒烟验证脚本
@@ -150,8 +151,8 @@ cd backend
 ### 3. 本地打包独立分发压缩包
 ```bash
 cd backend && uv pip install -e ".[dev,build]" && cd ..
-backend/.venv/bin/python scripts/build_release.py --version v0.3.0
-backend/.venv/bin/python scripts/smoke_test_release.py release_out/FBA-Label-Studio-v0.3.0-macos-arm64.zip
+backend/.venv/bin/python scripts/build_release.py --version v0.4.0
+backend/.venv/bin/python scripts/smoke_test_release.py release_out/FBA-Label-Studio-v0.4.0-macos-arm64.zip
 ```
 
 ---
@@ -167,8 +168,8 @@ backend/.venv/bin/python scripts/smoke_test_release.py release_out/FBA-Label-Stu
 **Q3：双排 `50×30mm` 打印多款 SKU 时，如果上一款正好剩单数张怎么办？**  
 在「CSV 批量套打」中默认开启 **「不同 SKU 间强制换行（奇数张右侧留白防错贴）」** 开关：当上一款 SKU 为奇数张（如 3 张）时，第 2 排右侧留白不排下一款，下一款直接从新的一排左侧开始，避免流水线贴标工人左右手混贴。
 
-**Q4：我的热敏打印机不是 TSC TTP-244 Pro，可以使用吗？**  
-可以。`v0.2.0` 起已重构为多协议架构，全面支持发送 `TSPL2`（TSC / 芯烨 / 佳博 / 汉印 / Rollo 等）与 `ZPL II`（斑马 Zebra 等），支持 `203` / `300 dpi` 及局域网 `TCP 9100` 端口直连，也支持通过系统原生驱动或高精 PDF 导出。
+**Q4：我的热敏打印机不是 TSC TTP-244 Pro（例如芯烨 XP-420B、佳博 Gprinter），可以使用吗？**  
+可以。软件全面支持发送标准 `TSPL2`（TSC / 芯烨 Xprinter XP-420B 等 / 佳博 Gprinter GP-1324D / GP-1134T 等 / 4BARCODE / 汉印 / Rollo）与 `ZPL II`（斑马 Zebra 等）裸指令，自动注入 `REFERENCE 0,0` 与 `SET TEAR ON` 消除第三方软件残留偏移，负 X/Y 偏移自动转为白底画布安全平移，并在「打印机设置 → 进阶兼容参数」中提供出纸方向 (`DIRECTION 0/1`)、打印速度与位图反色补偿开关，同时支持 `203` / `300 dpi`、局域网 `TCP 9100` 直连与系统原生驱动兜底。
 
 **Q5：我的货代箱唛格式特别，自动提取不到 FBA 编号或箱号怎么办？**  
 在外箱工作台点击货代箱唛栏旁的 **「解析规则」**，可直接添加自定义的货件号 / 仓点 / 箱号正则表达式，并用内置在线试跑器粘入样本文本立即测试提取效果，保存后即高优先级生效。

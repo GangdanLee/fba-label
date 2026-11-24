@@ -5,6 +5,8 @@ import {
   Badge,
   Button,
   Card,
+  Checkbox,
+  Collapse,
   Group,
   Modal,
   NumberInput,
@@ -16,7 +18,7 @@ import {
   TextInput,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Info, Plus, Trash2 } from "lucide-react";
 import * as api from "../api/client";
 import { useWorkbenchStore } from "../store/useWorkbenchStore";
 import type { CalibrationProfile } from "../types";
@@ -31,6 +33,8 @@ export function HardwareView() {
   const [netStatus, setNetStatus] = useState<Record<string, { ok: boolean; message: string }>>({});
   const [testingSpec, setTestingSpec] = useState<string | null>(null);
   const [draftEdits, setDraftEdits] = useState<Record<string, CalibrationProfile>>({});
+  const [showCompatGuide, setShowCompatGuide] = useState(false);
+  const [expandedAdv, setExpandedAdv] = useState<Record<string, boolean>>({});
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newWidth, setNewWidth] = useState(40);
@@ -150,6 +154,8 @@ export function HardwareView() {
         connection_type: "os_queue",
         network_host: "",
         network_port: 9100,
+        tspl_direction: 1,
+        invert_bitmap: false,
       });
       setAddModalOpen(false);
     } catch (err) {
@@ -157,6 +163,15 @@ export function HardwareView() {
     } finally {
       setCreating(false);
     }
+  };
+
+  const handleSaveProfile = async (prof: CalibrationProfile) => {
+    await saveProfile(prof);
+    setDraftEdits((prev) => {
+      const next = { ...prev };
+      delete next[prof.spec_key];
+      return next;
+    });
   };
 
   const handleRemoveProfile = async (specKey: string) => {
@@ -193,6 +208,14 @@ export function HardwareView() {
             </Text>
           </div>
           <Group gap="xs">
+            <Button
+              size="xs"
+              variant="subtle"
+              leftSection={<Info size={13} />}
+              onClick={() => setShowCompatGuide((prev) => !prev)}
+            >
+              芯烨 / 佳博适配说明
+            </Button>
             <Button size="xs" variant="light" leftSection={<Plus size={13} />} onClick={() => setAddModalOpen(true)}>
               新增纸卷规格
             </Button>
@@ -220,8 +243,14 @@ export function HardwareView() {
                         ? "green"
                         : "blue";
                 return (
-                  <Badge key={d.name} color={badgeColor} variant="light" title={d.status_detail || undefined}>
+                  <Badge
+                    key={d.name}
+                    color={badgeColor}
+                    variant="light"
+                    title={d.usage_tip || d.status_detail || undefined}
+                  >
                     {d.name} ({d.system})
+                    {d.brand_label ? ` · ${d.brand_label}` : ""}
                     {d.is_default ? " · 默认" : ""}
                     {` · 建议 ${d.suggested_protocol.toUpperCase()} ${d.suggested_dpi}dpi`}
                     {statusLabel}
@@ -231,12 +260,28 @@ export function HardwareView() {
             )}
           </Group>
           {printers
-            .filter((d) => d.status_detail)
+            .filter((d) => d.status_detail || d.usage_tip)
             .map((d) => (
               <Text key={`${d.name}-detail`} size="xs" c={d.status === "offline" ? "red" : "dimmed"}>
-                {d.name}：{d.status_detail}
+                {d.name}：{d.status_detail ? `${d.status_detail} ` : ""}
+                {d.usage_tip}
               </Text>
             ))}
+          <Collapse expanded={showCompatGuide}>
+            <Alert color="blue" variant="light" mt={4} p="xs" title="芯烨 XP-420B / 佳博 (Gprinter) / 兼容热敏机快速适配指南">
+              <Stack gap={4}>
+                <Text size="xs">
+                  1. <strong>芯烨 XP-420B 等机型</strong>：均原生支持 <strong>TSPL2 协议 (203dpi)</strong>；请确认机器处于「标签模式 (TSPL)」而非小票 ESC/POS 模式（开机长按走纸键或使用官网诊断工具切换）。Windows 若系统未自动创建队列，可选用官方 XP-420B 或兼容的 4BARCODE 4B-2054A 驱动，或直接走「局域网 TCP 9100」。
+                </Text>
+                <Text size="xs">
+                  2. <strong>佳博 (GP-1324D / GP-1134T / GP-3120TU 等)</strong>：本软件每次出纸自动注入 <code>REFERENCE 0,0</code> 与 <code>SET TEAR ON</code> 消除遗留偏移，负 X/Y 偏移改为画布内像素安全平移防止错乱；300dpi 机型请在下方将 DPI 设为 300。
+                </Text>
+                <Text size="xs">
+                  3. <strong>macOS AirPrint 驱动兜底</strong>：若 macOS 队列使用 AirPrint 驱动导致「裸指令直出」报 format 不支持，可在下方切换为「系统原生驱动打印」或使用通用 Raw CUPS 队列。
+                </Text>
+              </Stack>
+            </Alert>
+          </Collapse>
         </Stack>
       </Paper>
 
@@ -252,6 +297,8 @@ export function HardwareView() {
                 ? "100×100mm 单排外箱标纸卷"
                 : `${p.label_width_mm}×${p.label_height_mm}mm ${p.cols >= 2 ? "双排" : "单排"}自定义纸卷`;
           const curNetStatus = netStatus[p.spec_key];
+          const isDirty = Boolean(draftEdits[p.spec_key]);
+          const advOpen = Boolean(expandedAdv[p.spec_key]);
           return (
             <Card key={p.spec_key} withBorder radius="md" p="md">
               <Group justify="space-between" mb="sm" wrap="nowrap">
@@ -259,6 +306,11 @@ export function HardwareView() {
                   {cardTitle}
                 </Text>
                 <Group gap={6} wrap="nowrap">
+                  {isDirty && (
+                    <Badge color="orange" variant="filled" size="xs">
+                      未保存
+                    </Badge>
+                  )}
                   <Badge color="gray" variant="outline" size="xs">
                     {isTcp ? `TCP ${p.network_host || "未填IP"}:${p.network_port}` : p.printer_name || "自动选机"}
                   </Badge>
@@ -408,11 +460,55 @@ export function HardwareView() {
                   }
                 />
 
+                <div>
+                  <Button
+                    size="compact-xs"
+                    variant="subtle"
+                    color="gray"
+                    rightSection={advOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                    onClick={() => setExpandedAdv((prev) => ({ ...prev, [p.spec_key]: !prev[p.spec_key] }))}
+                  >
+                    进阶兼容参数（芯烨 / 佳博微调）
+                  </Button>
+                  <Collapse expanded={advOpen}>
+                    <Paper withBorder p="xs" mt={6} radius="sm" bg="var(--bg-subtle)">
+                      <Stack gap="xs">
+                        <SimpleGrid cols={2}>
+                          <Select
+                            label="出纸方向 (DIRECTION)"
+                            size="xs"
+                            value={String(p.tspl_direction ?? 1)}
+                            data={[
+                              { value: "1", label: "1 · 正向标准出纸（推荐）" },
+                              { value: "0", label: "0 · 倒转 180° 出纸" },
+                            ]}
+                            onChange={(v) => updateField(rawProf, "tspl_direction", Number(v) === 0 ? 0 : 1)}
+                          />
+                          <NumberInput
+                            label="打印速度 (SPEED 1~8)"
+                            size="xs"
+                            min={1}
+                            max={8}
+                            value={p.print_speed || 4}
+                            onChange={(v) => updateField(rawProf, "print_speed", Math.min(8, Math.max(1, Number(v) || 4)))}
+                          />
+                        </SimpleGrid>
+                        <Checkbox
+                          size="xs"
+                          label="位图反色补偿（仅当个别国产固件印出黑底白字反白时开启）"
+                          checked={Boolean(p.invert_bitmap)}
+                          onChange={(e) => updateField(rawProf, "invert_bitmap", e.currentTarget.checked)}
+                        />
+                      </Stack>
+                    </Paper>
+                  </Collapse>
+                </div>
+
                 <Group justify="flex-end" mt="xs">
                   <Button size="xs" variant="default" onClick={() => void handleTestCard(p.spec_key)}>
                     下载校准测试卡 PDF
                   </Button>
-                  <Button size="xs" onClick={() => void saveProfile(p)}>
+                  <Button size="xs" onClick={() => void handleSaveProfile(p)}>
                     保存校准参数
                   </Button>
                 </Group>

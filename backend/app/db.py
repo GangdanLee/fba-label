@@ -80,7 +80,9 @@ def init_db(db_path: Path | None = None) -> None:
                 dpi INTEGER NOT NULL DEFAULT 203,
                 connection_type TEXT NOT NULL DEFAULT 'os_queue',
                 network_host TEXT NOT NULL DEFAULT '',
-                network_port INTEGER NOT NULL DEFAULT 9100
+                network_port INTEGER NOT NULL DEFAULT 9100,
+                tspl_direction INTEGER NOT NULL DEFAULT 1,
+                invert_bitmap INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS app_state (
@@ -126,6 +128,8 @@ def init_db(db_path: Path | None = None) -> None:
             ("connection_type", "TEXT NOT NULL DEFAULT 'os_queue'"),
             ("network_host", "TEXT NOT NULL DEFAULT ''"),
             ("network_port", "INTEGER NOT NULL DEFAULT 9100"),
+            ("tspl_direction", "INTEGER NOT NULL DEFAULT 1"),
+            ("invert_bitmap", "INTEGER NOT NULL DEFAULT 0"),
         ]
         for col_name, col_def in migrations:
             if col_name not in existing_cols:
@@ -133,8 +137,8 @@ def init_db(db_path: Path | None = None) -> None:
 
         # 注入默认纸卷规格校准档案
         default_profiles = [
-            ("100x100_single", 100.0, 100.0, 1, 0.0, 2.0, 98.0, 98.0, 0.0, 0.0, 8, 4, "tspl_raw", "", "tspl", 203, "os_queue", "", 9100),
-            ("50x30_double", 50.0, 30.0, 2, 2.0, 2.0, 48.0, 28.0, 0.0, 0.0, 8, 4, "tspl_raw", "", "tspl", 203, "os_queue", "", 9100),
+            ("100x100_single", 100.0, 100.0, 1, 0.0, 2.0, 98.0, 98.0, 0.0, 0.0, 8, 4, "tspl_raw", "", "tspl", 203, "os_queue", "", 9100, 1, 0),
+            ("50x30_double", 50.0, 30.0, 2, 2.0, 2.0, 48.0, 28.0, 0.0, 0.0, 8, 4, "tspl_raw", "", "tspl", 203, "os_queue", "", 9100, 1, 0),
         ]
         for prof in default_profiles:
             conn.execute(
@@ -143,8 +147,9 @@ def init_db(db_path: Path | None = None) -> None:
                     spec_key, label_width_mm, label_height_mm, cols, col_gap_mm, row_gap_mm,
                     safe_width_mm, safe_height_mm, offset_x_mm, offset_y_mm, darkness,
                     print_speed, preferred_channel, printer_name,
-                    protocol, dpi, connection_type, network_host, network_port
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    protocol, dpi, connection_type, network_host, network_port,
+                    tspl_direction, invert_bitmap
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 prof,
             )
@@ -203,8 +208,9 @@ def upsert_calibration_profile(profile: CalibrationProfile, db_path: Path | None
                 spec_key, label_width_mm, label_height_mm, cols, col_gap_mm, row_gap_mm,
                 safe_width_mm, safe_height_mm, offset_x_mm, offset_y_mm, darkness,
                 print_speed, preferred_channel, printer_name,
-                protocol, dpi, connection_type, network_host, network_port
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                protocol, dpi, connection_type, network_host, network_port,
+                tspl_direction, invert_bitmap
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(spec_key) DO UPDATE SET
                 label_width_mm = excluded.label_width_mm,
                 label_height_mm = excluded.label_height_mm,
@@ -223,7 +229,9 @@ def upsert_calibration_profile(profile: CalibrationProfile, db_path: Path | None
                 dpi = excluded.dpi,
                 connection_type = excluded.connection_type,
                 network_host = excluded.network_host,
-                network_port = excluded.network_port
+                network_port = excluded.network_port,
+                tspl_direction = excluded.tspl_direction,
+                invert_bitmap = excluded.invert_bitmap
             """,
             (
                 profile.spec_key,
@@ -245,6 +253,8 @@ def upsert_calibration_profile(profile: CalibrationProfile, db_path: Path | None
                 profile.connection_type,
                 profile.network_host,
                 profile.network_port,
+                int(profile.tspl_direction),
+                1 if profile.invert_bitmap else 0,
             ),
         )
     return profile

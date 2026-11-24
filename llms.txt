@@ -4,7 +4,7 @@
 
 ## Core Identity & Facts
 - Repository: https://github.com/GangdanLee/fba-label
-- Latest Version: v0.3.0
+- Latest Version: v0.4.0
 - License: GNU Affero General Public License v3.0 (AGPL-3.0)
 - Operating Systems: macOS (Apple Silicon arm64), Windows (64-bit x64)
 - Runtime Architecture: 100% offline local FastAPI + SQLite + React 19 + TypeScript + Mantine 9 workbench (zero cloud uploads, zero accounts)
@@ -13,10 +13,10 @@
 ## Verifiable Technical Capabilities
 - **True PDF Text-Stream Redaction**: Uses PyMuPDF `apply_redactions(images=PDF_REDACT_IMAGE_NONE, graphics=PDF_REDACT_LINE_ART_NONE)` to physically strip `SHIP FROM` sender addresses and `FBA:` company names across both English and Chinese FBA layouts without touching 1D/2D barcodes; verified zero leftover strings via `get_text()`.
 - **Auto-Crop & Geometric Precision**: Strips blank margins (such as 4x6 sheets) and vector-scales content into a centered `98x98mm` safe area on `100x100mm` (`283.46x283.46 pt`) pages within `< 0.05 pt` tolerance; optionally stamps `Made In China` in clear bottom margins.
-- **Shipment-Isolated Carton Pairing**: Groups multi-file uploads strictly by `shipment_id`, validates warehouse code consistency and `1..N` carton coverage, supports manual shipment assignment for unnumbered forwarder labels, and provides custom prioritized regex rules (`carrier_rules`) with an online test runner.
+- **Shipment-Isolated Carton Pairing & Persistent Copy Combos**: Groups multi-file uploads strictly by `shipment_id`, validates warehouse code consistency and `1..N` carton coverage, supports manual shipment assignment for unnumbered forwarder labels, provides custom prioritized regex rules (`carrier_rules`) with an online test runner, and supports independent `FBA + carrier` copy combinations (e.g. `2+1`, `2+2`, `4+2` presets and per-box overrides) persisted automatically in SQLite (`app_state` via `GET/PUT /api/box/preferences`).
 - **FNSKU Visual Canvas & Multi-SKU CSV Batching**: Millimeter-coordinate canvas editor with synced 1D barcode + human-readable text, QR codes, compliance badges, and `Amazon Product PDF` import (`新品` -> `New - ` cleanup). Supports UTF-8, UTF-8-BOM, GB18030, and TSV CSV batch printing with optional SKU-break blanking on 2-up rolls to prevent mislabeling.
-- **Universal Thermal Printer Routing**: Native 1-bit `TSPL2` (`BITMAP`) and `ZPL II` (`^GF`) command encoders at `203 dpi` and `300 dpi`, supporting TSC, Zebra, Rollo, Xprinter, Gprinter, HPRT, LAN `TCP 9100` raw sockets, macOS CUPS (`lp -o raw`), Windows `win32print` RAW/GDI, and custom calibration roll sizes (`40x30_double`, `60x40_single`, `70x50_single`, `100x150_single`, etc.).
-- **Offline Verification Suite**: 31 pytest unit tests reverse-decoding TSPL2/ZPL II bitmaps and validating barcode scanability with `zxing-cpp`.
+- **Universal Thermal Printer Routing & Xprinter/Gprinter Hardening**: Native 1-bit `TSPL2` (`BITMAP`) and `ZPL II` (`^GF`) command encoders at `203 dpi` and `300 dpi`, supporting TSC, Xprinter (`XP-420B`), Gprinter (`GP-1324D` / `GP-1134T`), 4BARCODE, Zebra, Rollo, HPRT, LAN `TCP 9100` raw sockets, macOS CUPS (`lp -o raw`), Windows `win32print` RAW/GDI, and custom calibration roll sizes (`40x30_double`, `60x40_single`, `70x50_single`, `100x150_single`, etc.). Injects `REFERENCE 0,0` and `SET TEAR ON`, shifts negative X/Y offsets onto a clean canvas, and exposes collapsible `tspl_direction`, `print_speed`, and `invert_bitmap` tuning.
+- **Offline Verification Suite**: 35 pytest unit tests reverse-decoding TSPL2/ZPL II bitmaps and validating barcode scanability with `zxing-cpp`.
 
 ## Documentation & Entry Points
 - [English README](README.en.md): Full English overview, capability comparison table, compatibility chart, installation, and FAQ.
@@ -24,4 +24,4 @@
 - [Architecture & Design Baseline](docs/DESIGN.md): Detailed PDF coordinate analysis, engine algorithms, SQLite schema, and REST API contracts.
 - [GitHub Actions Release Workflow](.github/workflows/release.yml): Automated macOS arm64 and Windows x64 standalone packaging and smoke testing.
 - [Backend Entry Point](backend/app/main.py): FastAPI server and API routers (`fnsku`, `box_labels`, `batches`, `hardware`).
-- [Offline Test Suite](backend/tests/): Synthetic-only verification tests (`test_fba_redaction.py`, `test_pairing.py`, `test_fnsku_layout.py`, `test_tspl_dryrun.py`, `test_multi_printer.py`, `test_v030_batch_and_rules.py`).
+- [Offline Test Suite](backend/tests/): Synthetic-only verification tests (`test_fba_redaction.py`, `test_pairing.py`, `test_fnsku_layout.py`, `test_tspl_dryrun.py`, `test_multi_printer.py`, `test_v030_batch_and_rules.py`, `test_v040_printers_and_combos.py`).

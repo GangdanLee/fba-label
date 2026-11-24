@@ -32,6 +32,8 @@ export function StudioHeader() {
     orderMode,
     workMode,
     defaultCopies,
+    fbaCopies,
+    carrierCopies,
     fnskuQty,
     colGapMm,
   } = useWorkbenchStore();
@@ -69,9 +71,15 @@ export function StudioHeader() {
     if (activeTab === "box") {
       if (!pairing.can_print || !pairing.active_shipment_id) return;
       const g = pairing.groups.find((x) => x.shipment_id === pairing.active_shipment_id);
+      const comboLabel =
+        workMode === "fba_only"
+          ? `仅FBA×${fbaCopies}`
+          : workMode === "carrier_only"
+            ? `仅箱唛×${carrierCopies}`
+            : `FBA×${fbaCopies}+唛×${carrierCopies}`;
       openPrintJob({
         title: `打印外箱任务 · ${pairing.active_shipment_id}`,
-        summaryDesc: `${pairing.active_shipment_id}（${pairing.total_sheets} 张）`,
+        summaryDesc: `${pairing.active_shipment_id}（${comboLabel}，共 ${pairing.total_sheets} 张）`,
         specKey: "100x100_single",
         batchType: workMode === "fba_only" ? "box_fba_only" : workMode === "carrier_only" ? "box_carrier_only" : "box_paired",
         shipmentId: pairing.active_shipment_id,
