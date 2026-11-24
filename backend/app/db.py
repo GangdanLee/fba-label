@@ -574,6 +574,7 @@ def export_backup_payload(include_batches: bool = False, db_path: Path | None = 
 
     return {
         "schema_version": 1,
+        "include_batches": bool(include_batches),
         "skus": skus,
         "calibration_profiles": profiles,
         "carrier_rules": carrier_rules,

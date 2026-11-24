@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type DragEvent } from "react";
 import {
   ActionIcon,
   Alert,
@@ -43,6 +43,7 @@ export function BoxStudio() {
     prefsSavedAt,
     redactionOptions,
     pairing,
+    forceUnlocked,
     activeGroupId,
     activeBoxIndex,
     activeBoxKey,
@@ -78,6 +79,29 @@ export function BoxStudio() {
   const carInputRef = useRef<HTMLInputElement>(null);
   const [splitPct, setSplitPct] = useState(50);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [dragZone, setDragZone] = useState<"fba" | "carrier" | null>(null);
+
+  const handleDropPdf = (zone: "fba" | "carrier", e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragZone(null);
+    const allFiles = Array.from(e.dataTransfer?.files || []);
+    const pdfs = allFiles.filter(
+      (f) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"),
+    );
+    if (!pdfs.length) {
+      if (allFiles.length > 0) {
+        notifications.show({
+          title: "文件格式不支持",
+          message: "请拖入 .pdf 格式的外箱标签或货代箱唛文件",
+          color: "orange",
+        });
+      }
+      return;
+    }
+    if (zone === "fba") void uploadFbaFiles(pdfs);
+    else void uploadCarrierFiles(pdfs);
+  };
 
   const activeGroup = pairing.groups.find((g) => g.shipment_id === activeGroupId) || pairing.groups[0] || null;
   const activePair =
@@ -135,16 +159,21 @@ export function BoxStudio() {
         fba_pdfs_b64: fbaMap,
         carrier_pdfs_b64: carMap,
         groups: pairing.groups,
+        group_by: groupBy,
         work_mode: workMode,
         order_mode: orderMode,
         insert_separator_pages: insertSeparatorPages,
+        force_unlocked: forceUnlocked,
         overlay_elements: boxOverlayElements,
       });
       api.downloadBase64File(res.zip_b64, res.filename, "application/zip");
+      const byShipment = res.group_by === "shipment";
+      const skippedCount = res.skipped_groups?.length || 0;
+      const skipSuffix = skippedCount > 0 ? `；已安全跳过 ${skippedCount} 个未配平组 (${res.skipped_groups?.join(", ")})` : "";
       notifications.show({
-        title: "已导出按 SKU 拆分 ZIP 包",
-        message: `包含 ${res.file_count} 份独立 PDF（共 ${res.total_pages} 页）与核对明细 CSV`,
-        color: "green",
+        title: byShipment ? "已导出按货件拆分 ZIP 包" : "已导出按 SKU 拆分 ZIP 包",
+        message: `包含 ${res.file_count} 份独立 PDF（共 ${res.total_pages} 页）与核对明细 CSV${skipSuffix}`,
+        color: skippedCount > 0 ? "teal" : "green",
       });
     } catch (err) {
       notifications.show({ title: "打包 ZIP 失败", message: (err as Error).message, color: "red" });
@@ -210,8 +239,16 @@ export function BoxStudio() {
             className={classes.importSlot}
             role="button"
             tabIndex={0}
+            style={dragZone === "fba" ? { borderColor: "var(--accent)", background: "var(--accent-soft)" } : undefined}
             onClick={() => fbaInputRef.current?.click()}
             onKeyDown={(e) => e.key === "Enter" && fbaInputRef.current?.click()}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (dragZone !== "fba") setDragZone("fba");
+            }}
+            onDragLeave={() => setDragZone((z) => (z === "fba" ? null : z))}
+            onDrop={(e) => handleDropPdf("fba", e)}
           >
             <Text size="xs" fw={600}>
               点击选取或拖入外箱标 PDF
@@ -284,8 +321,16 @@ export function BoxStudio() {
             className={classes.importSlot}
             role="button"
             tabIndex={0}
+            style={dragZone === "carrier" ? { borderColor: "var(--accent)", background: "var(--accent-soft)" } : undefined}
             onClick={() => carInputRef.current?.click()}
             onKeyDown={(e) => e.key === "Enter" && carInputRef.current?.click()}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (dragZone !== "carrier") setDragZone("carrier");
+            }}
+            onDragLeave={() => setDragZone((z) => (z === "carrier" ? null : z))}
+            onDrop={(e) => handleDropPdf("carrier", e)}
           >
             <Text size="xs" fw={600}>
               点击选取或拖入货代箱唛 PDF
@@ -695,7 +740,7 @@ export function BoxStudio() {
                       缺同号外箱标
                     </Badge>
                     <Text size="sm" fw={700}>
-                      尚缺 {activeGroup.shipment_id} 的外箱 PDF
+                      尚缺 {activePair?.shipment_id || activeGroup.display_label || activeGroup.shipment_id} 的外箱 PDF
                     </Text>
                     <Text size="xs" c="dimmed">
                       点击补充导入同货件号外箱标
@@ -709,8 +754,13 @@ export function BoxStudio() {
                     {activeGroup.status === "matched" ? "FBA 编号配对一致" : "待核对配对"}
                   </Badge>
                   <Text size="xs" fw={700} ff="var(--mono)">
-                    {activeGroup.shipment_id}
+                    {activePair?.shipment_id || activeGroup.display_label || activeGroup.shipment_id}
                   </Text>
+                  {activeGroup.group_kind === "sku" && (
+                    <Text size="xs" c="dimmed" truncate maw={140}>
+                      {activeGroup.display_label || "SKU 归集"}
+                    </Text>
+                  )}
                   <ArrowLeftRight size={15} color="var(--accent)" />
                   <Text size="xs" c="dimmed">
                     {activePair?.fba_box && activePair?.carrier_box
@@ -743,7 +793,7 @@ export function BoxStudio() {
                       缺同号货代箱唛
                     </Badge>
                     <Text size="sm" fw={700}>
-                      尚缺 {activeGroup.shipment_id} 的货代箱唛
+                      尚缺 {activePair?.shipment_id || activeGroup.display_label || activeGroup.shipment_id} 的货代箱唛
                     </Text>
                     <Text size="xs" c="dimmed">
                       点击导入同号箱唛，或切换“仅打外箱”

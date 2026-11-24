@@ -51,7 +51,7 @@ export function BatchesView() {
         totalUnitsOrBoxes: b.total_units_or_boxes,
         copiesPerBox: b.copies_per_box,
         orderMode: b.order_mode,
-        totalSheets: b.total_units_or_boxes * b.copies_per_box,
+        totalSheets: snap.page_count ?? b.total_units_or_boxes * b.copies_per_box,
         sourceFiles: b.source_files,
         getPdfB64: async () => snap.pdf_b64,
       });

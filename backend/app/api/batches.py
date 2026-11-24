@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from app import db
+from app.engines.pdf_engine import PyMuPDFEngine
 from app.models.schemas import PrintBatchCreate, PrintBatchRecord
 
 router = APIRouter(prefix="/api/batches", tags=["batches"])
@@ -24,7 +25,7 @@ async def create_batch_endpoint(payload: PrintBatchCreate) -> PrintBatchRecord:
 
 
 @router.get("/{batch_id}/pdf")
-async def get_batch_snapshot_pdf(batch_id: str) -> dict[str, str]:
+async def get_batch_snapshot_pdf(batch_id: str) -> dict[str, object]:
     """读取历史打印批次落盘快照 PDF（用于一键补打或重下）。"""
     rec = db.get_print_batch(batch_id)
     if rec is None:
@@ -34,11 +35,14 @@ async def get_batch_snapshot_pdf(batch_id: str) -> dict[str, str]:
     snap_path = Path(rec.snapshot_dir)
     if not snap_path.is_file():
         raise HTTPException(status_code=404, detail="批次 PDF 快照文件不存在")
+    pdf_bytes = snap_path.read_bytes()
+    page_count = PyMuPDFEngine().get_page_count(pdf_bytes)
     safe_id = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in rec.shipment_id)
     return {
         "batch_id": rec.id,
         "filename": f"{safe_id}_{rec.spec_key}.pdf",
-        "pdf_b64": base64.b64encode(snap_path.read_bytes()).decode("ascii"),
+        "page_count": page_count,
+        "pdf_b64": base64.b64encode(pdf_bytes).decode("ascii"),
     }
 
 

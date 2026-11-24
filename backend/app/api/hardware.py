@@ -441,6 +441,15 @@ async def execute_print(req: ExecutePrintRequest) -> dict[str, object]:
             raise HTTPException(status_code=400, detail="局域网 TCP 9100 直连请使用「裸指令直出（TSPL / ZPL）」通道")
         printer_result = get_printer_adapter().print_pdf(effective_printer, pdf_bytes, title=req.batch.shipment_id)
 
+    if not is_dry_run and req.channel in ("tspl_raw", "os_driver") and printer_result.get("ok") is False:
+        err_msg = str(
+            printer_result.get("hint")
+            or printer_result.get("error")
+            or printer_result.get("stderr")
+            or "打印机拒绝接收或发送作业失败"
+        ).strip()
+        raise HTTPException(status_code=502, detail=err_msg)
+
     record = db.create_print_batch(req.batch)
     snap_path = get_snapshots_dir() / f"{record.id}.pdf"
     snap_path.write_bytes(pdf_bytes)
@@ -450,6 +459,7 @@ async def execute_print(req: ExecutePrintRequest) -> dict[str, object]:
 
     return {
         "ok": True,
+        "page_count": len(dims_pt),
         "protocol": effective_protocol,
         "dpi": effective_dpi,
         "connection_type": effective_conn,

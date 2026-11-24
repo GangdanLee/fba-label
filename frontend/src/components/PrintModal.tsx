@@ -93,19 +93,29 @@ export function PrintModal() {
           source_files: pendingPrintJob.sourceFiles,
         },
       });
+      if (res.printer_result?.ok === false) {
+        const errMsg = String(
+          res.printer_result.hint || res.printer_result.error || res.printer_result.stderr || "打印机返回失败状态",
+        );
+        notifications.show({ title: "打印任务发送失败", message: errMsg, color: "red" });
+        return;
+      }
       await useWorkbenchStore.getState().setLastPrintedSpec(res.last_printed_spec);
       await refreshBatches();
       closePrintModal();
       const isOfflineDryrun = !isPdfOnly && (Boolean(res.printer_result?.offline_dryrun) || dryRun);
       const resProto = res.protocol === "zpl" ? "ZPL II" : "TSPL2";
       const resDpi = res.dpi || dpi;
+      const pagesDone = res.page_count || pendingPrintJob.totalSheets;
       notifications.show({
         title: "打印任务已处理并归档",
         message: isPdfOnly
-          ? "已导出标准 PDF 并写入打印记录（支持后续一键补打）"
-          : isOfflineDryrun
-            ? `已离线干跑校验（未发送实体机）：${resProto} (${resDpi}dpi) ${res.tspl_commands} 页 / ${(res.tspl_bytes_len / 1024).toFixed(1)} KB`
-            : `${resProto} (${resDpi}dpi) 指令发送成功 (${res.tspl_commands} 页 / ${(res.tspl_bytes_len / 1024).toFixed(1)} KB)`,
+          ? `已导出标准 PDF（${pagesDone} 页）并写入打印记录（支持后续一键补打）`
+          : channel === "os_driver" && !isOfflineDryrun
+            ? `已通过系统原生打印驱动提交（共 ${pagesDone} 页）`
+            : isOfflineDryrun
+              ? `已离线干跑校验（未发送实体机）：${resProto} (${resDpi}dpi) ${res.tspl_commands} 页 / ${(res.tspl_bytes_len / 1024).toFixed(1)} KB`
+              : `${resProto} (${resDpi}dpi) 指令发送成功 (${res.tspl_commands} 页 / ${(res.tspl_bytes_len / 1024).toFixed(1)} KB)`,
         color: "green",
       });
     } catch (err) {

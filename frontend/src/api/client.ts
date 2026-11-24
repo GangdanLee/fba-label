@@ -53,7 +53,8 @@ export async function processCarrierFile(file: File, offsetX = 0, offsetY = 0): 
   fd.append("file", file);
   fd.append("offset_x_mm", String(offsetX));
   fd.append("offset_y_mm", String(offsetY));
-  return apiJson<UploadedCarrierFile>("/api/box/process-carrier", { method: "POST", body: fd });
+  const res = await apiJson<UploadedCarrierFile>("/api/box/process-carrier", { method: "POST", body: fd });
+  return { ...res, rawFile: file };
 }
 
 export async function pairBoxes(payload: {
@@ -109,11 +110,20 @@ export async function exportBoxSkuZip(payload: {
   fba_pdfs_b64: Record<string, string>;
   carrier_pdfs_b64: Record<string, string>;
   groups: PairingGroup[];
+  group_by?: BoxGroupBy;
   work_mode: "paired" | "fba_only" | "carrier_only";
   order_mode: "interleave" | "per_box_group" | "split_all";
   insert_separator_pages: boolean;
+  force_unlocked?: boolean;
   overlay_elements?: CanvasElement[];
-}): Promise<{ filename: string; file_count: number; total_pages: number; zip_b64: string }> {
+}): Promise<{
+  filename: string;
+  file_count: number;
+  total_pages: number;
+  group_by?: string;
+  skipped_groups?: string[];
+  zip_b64: string;
+}> {
   return apiJson("/api/box/export-sku-zip", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -176,7 +186,9 @@ export async function fetchBatches(): Promise<PrintBatchRecord[]> {
   return apiJson<PrintBatchRecord[]>("/api/batches");
 }
 
-export async function fetchBatchPdf(batchId: string): Promise<{ batch_id: string; filename: string; pdf_b64: string }> {
+export async function fetchBatchPdf(
+  batchId: string,
+): Promise<{ batch_id: string; filename: string; page_count?: number; pdf_b64: string }> {
   return apiJson(`/api/batches/${encodeURIComponent(batchId)}/pdf`);
 }
 
@@ -263,6 +275,7 @@ export async function executePrint(payload: {
   };
 }): Promise<{
   ok: boolean;
+  page_count?: number;
   protocol?: string;
   dpi?: number;
   connection_type?: string;

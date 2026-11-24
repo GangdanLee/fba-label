@@ -22,7 +22,7 @@ from app.engines.carrier_parser import preview_carrier_rules_on_text, process_ca
 from app.engines.fba_processor import process_fba_pdf
 from app.engines.fnsku_engine import _draw_element
 from app.engines.font_manager import ensure_reportlab_font
-from app.engines.pairing_engine import build_print_queue, pair_and_validate
+from app.engines.pairing_engine import _evaluate_group_printable, build_print_queue, pair_and_validate
 from app.models.schemas import (
     BoxPrintPreferences,
     CanvasElement,
@@ -152,6 +152,30 @@ async def pair_boxes_endpoint(req: PairingRequest) -> PairingResponse:
     return pair_and_validate(req)
 
 
+def _draw_fitted_centered(
+    c: Canvas,
+    text: str,
+    cx_pt: float,
+    y_pt: float,
+    max_w_pt: float,
+    font_name: str,
+    max_pt: float,
+    min_pt: float = 6.5,
+) -> None:
+    """按物理边框宽度自适应缩放字号，超长尾部截断省略，防止分隔页文字冲出框外。"""
+    clean = (text or "-").strip() or "-"
+    size = float(max_pt)
+    while size > min_pt and c.stringWidth(clean, font_name, size) > max_w_pt:
+        size = round(size - 0.5, 1)
+    if c.stringWidth(clean, font_name, size) > max_w_pt:
+        trimmed = clean
+        while len(trimmed) > 3 and c.stringWidth(trimmed + "...", font_name, size) > max_w_pt:
+            trimmed = trimmed[:-1]
+        clean = trimmed + "..."
+    c.setFont(font_name, size)
+    c.drawCentredString(cx_pt, y_pt, clean)
+
+
 def _build_separator_page_pdf(item: PrintQueueItem, page_mm: float = PAGE_BOX_MM) -> bytes:
     """用 ReportLab 绘制高对比黑白分隔提示页，防止跨仓/换单连续打印贴混。"""
     buf = io.BytesIO()
@@ -167,26 +191,43 @@ def _build_separator_page_pdf(item: PrintQueueItem, page_mm: float = PAGE_BOX_MM
     c.setFillColorRGB(0, 0, 0)
     c.rect(mm_to_pt(4), mm_to_pt(page_mm - 20), mm_to_pt(page_mm - 8), mm_to_pt(16), stroke=0, fill=1)
 
+    max_w_pt = mm_to_pt(page_mm - 16)
+    cx_pt = mm_to_pt(page_mm / 2)
+
     c.setFillColorRGB(1, 1, 1)
-    c.setFont(font_bold, 13)
-    c.drawCentredString(mm_to_pt(page_mm / 2), mm_to_pt(page_mm - 14), "出纸分隔提示 · 请核对换仓 / 换款")
+    _draw_fitted_centered(c, "出纸分隔提示 · 请核对换仓 / 换款", cx_pt, mm_to_pt(page_mm - 14), max_w_pt, font_bold, 13.0)
 
     c.setFillColorRGB(0, 0, 0)
     wh_text = (item.warehouse_code or "待确认仓库").strip()
-    c.setFont(font_bold, 26)
-    c.drawCentredString(mm_to_pt(page_mm / 2), mm_to_pt(page_mm - 42), wh_text)
+    _draw_fitted_centered(c, wh_text, cx_pt, mm_to_pt(page_mm - 42), max_w_pt, font_bold, 26.0, min_pt=14.0)
 
     c.setLineWidth(0.8)
     c.line(mm_to_pt(12), mm_to_pt(page_mm - 50), mm_to_pt(page_mm - 12), mm_to_pt(page_mm - 50))
 
-    c.setFont(font_bold, 11)
-    c.drawCentredString(mm_to_pt(page_mm / 2), mm_to_pt(page_mm - 62), f"SKU: {item.sku_text or '-'}")
-    c.setFont(font_reg, 10)
-    c.drawCentredString(mm_to_pt(page_mm / 2), mm_to_pt(page_mm - 72), f"货件编号: {item.shipment_id or '-'}")
-    c.drawCentredString(mm_to_pt(page_mm / 2), mm_to_pt(page_mm - 82), item.separator_detail or "后续为此仓对应外箱标签")
+    detail_str = item.separator_detail or "后续为此仓对应外箱标签"
+    sku_disp = (item.sku_text or "").strip()
+    if not sku_disp:
+        if "混装箱" in detail_str:
+            sku_disp = "混装箱 (Mixed SKU)"
+        elif "未识别 SKU" in detail_str:
+            sku_disp = "未识别 SKU"
+        else:
+            sku_disp = "-"
+
+    _draw_fitted_centered(c, f"SKU: {sku_disp}", cx_pt, mm_to_pt(page_mm - 62), max_w_pt, font_bold, 11.0)
+    _draw_fitted_centered(
+        c,
+        f"货件编号: {item.shipment_id or '-'}",
+        cx_pt,
+        mm_to_pt(page_mm - 72),
+        max_w_pt,
+        font_reg,
+        10.0,
+    )
+    _draw_fitted_centered(c, detail_str, cx_pt, mm_to_pt(page_mm - 82), max_w_pt, font_reg, 10.0)
 
     c.setFont(font_reg, 8.5)
-    c.drawCentredString(mm_to_pt(page_mm / 2), mm_to_pt(10), "FBA Label Studio · 分仓防错贴提示页（请勿当外箱标贴箱）")
+    c.drawCentredString(cx_pt, mm_to_pt(10), "FBA Label Studio · 分仓防错贴提示页（请勿当外箱标贴箱）")
     c.showPage()
     c.save()
     return buf.getvalue()
@@ -281,9 +322,11 @@ class SkuZipExportRequest(BaseModel):
     fba_pdfs_b64: dict[str, str] = Field(default_factory=dict)
     carrier_pdfs_b64: dict[str, str] = Field(default_factory=dict)
     groups: list[PairingGroup] = Field(default_factory=list)
+    group_by: Literal["shipment", "sku"] = "sku"
     work_mode: Literal["paired", "fba_only", "carrier_only"] = "paired"
     order_mode: Literal["interleave", "per_box_group", "split_all"] = "per_box_group"
     insert_separator_pages: bool = False
+    force_unlocked: bool = False
     overlay_elements: list[CanvasElement] = Field(default_factory=list)
 
 
@@ -320,7 +363,7 @@ async def export_manifest_csv_endpoint(req: ManifestCsvExportRequest) -> dict[st
 
 @router.post("/export-sku-zip")
 async def export_sku_zip_endpoint(req: SkuZipExportRequest) -> dict[str, object]:
-    """按每个 SKU 分组生成独立矢量 PDF，并打包附带统一出纸核对明细 CSV 的 ZIP 压缩包。"""
+    """按每个分组（SKU 或货件）生成独立矢量 PDF（跳过未配对或存在冲突阻断的组），打包附带统一核对明细 CSV。"""
     if not req.groups:
         raise HTTPException(status_code=400, detail="当前没有可导出的分组数据")
 
@@ -329,10 +372,18 @@ async def export_sku_zip_endpoint(req: SkuZipExportRequest) -> dict[str, object]
     file_count = 0
     total_pages = 0
     used_names: set[str] = set()
+    skipped_groups: list[str] = []
+    effective_group_by = "shipment" if (req.group_by == "shipment" or req.groups[0].group_kind == "shipment") else "sku"
 
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
         for grp in req.groups:
+            raw_label = (grp.display_label or grp.shipment_id or f"group_{file_count + 1}").strip()
+            can_print, _ = _evaluate_group_printable(grp, req.work_mode, req.force_unlocked)
+            if not can_print:
+                skipped_groups.append(raw_label)
+                continue
+
             q = build_print_queue(
                 grp,
                 work_mode=req.work_mode,
@@ -340,6 +391,7 @@ async def export_sku_zip_endpoint(req: SkuZipExportRequest) -> dict[str, object]
                 insert_separator_pages=req.insert_separator_pages,
             )
             if not q:
+                skipped_groups.append(raw_label)
                 continue
             pdf_bytes = _render_queue_to_pdf_bytes(
                 queue=q,
@@ -347,7 +399,6 @@ async def export_sku_zip_endpoint(req: SkuZipExportRequest) -> dict[str, object]
                 carrier_pdfs_b64=req.carrier_pdfs_b64,
                 overlay_elements=req.overlay_elements,
             )
-            raw_label = (grp.display_label or grp.shipment_id or f"group_{file_count + 1}").strip()
             safe_base = re.sub(r'[\\/:*?"<>|\s]+', "_", raw_label)[:48].strip("_") or f"group_{file_count + 1}"
             fname = f"{safe_base}_{len(q)}pages.pdf"
             if fname in used_names:
@@ -361,15 +412,22 @@ async def export_sku_zip_endpoint(req: SkuZipExportRequest) -> dict[str, object]
                 all_manifest_rows.append(_queue_item_to_manifest_row(item, output_file=fname))
 
         if file_count == 0:
-            raise HTTPException(status_code=400, detail="没有符合当前条件的可导出打印页")
+            raise HTTPException(
+                status_code=400,
+                detail="没有通过配对校验的可导出分组（请补齐外箱/箱唛或排查仓点/箱数冲突）",
+            )
 
         csv_bytes = _build_manifest_csv_bytes(all_manifest_rows, headers)
         zf.writestr("出纸核对明细.csv", csv_bytes)
 
+    zip_prefix = "FBA_Label_按货件分组" if effective_group_by == "shipment" else "FBA_Label_按SKU归集"
+    unit_word = "票" if effective_group_by == "shipment" else "款"
     return {
-        "filename": f"FBA_Label_按SKU归集_{file_count}款_{total_pages}页.zip",
+        "filename": f"{zip_prefix}_{file_count}{unit_word}_{total_pages}页.zip",
         "file_count": file_count,
         "total_pages": total_pages,
+        "group_by": effective_group_by,
+        "skipped_groups": skipped_groups,
         "zip_b64": base64.b64encode(zip_buf.getvalue()).decode("ascii"),
     }
 

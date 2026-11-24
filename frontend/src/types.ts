@@ -96,6 +96,7 @@ export interface UploadedCarrierFile {
   warehouse_code: string | null;
   items: CarrierBoxMeta[];
   pdf_b64: string;
+  rawFile?: File;
 }
 
 export interface PairingPairItem {

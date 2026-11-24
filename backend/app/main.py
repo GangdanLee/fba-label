@@ -21,7 +21,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     title="FBA Label Studio API",
-    version="0.5.0",
+    version="0.5.1",
     lifespan=lifespan,
 )
 
@@ -34,7 +34,7 @@ app.include_router(system_backup.router)
 
 @app.get("/api/health")
 async def health_check() -> JSONResponse:
-    return JSONResponse({"ok": True, "service": "fba-label-studio", "version": "0.5.0"})
+    return JSONResponse({"ok": True, "service": "fba-label-studio", "version": "0.5.1"})
 
 
 _frontend_dir = get_frontend_dist_dir()

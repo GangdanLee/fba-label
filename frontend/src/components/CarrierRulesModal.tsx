@@ -19,6 +19,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import { Pencil, Play, Plus, Trash2 } from "lucide-react";
 import * as api from "../api/client";
+import { useWorkbenchStore } from "../store/useWorkbenchStore";
 import type { CarrierRule } from "../types";
 import { CARRIER_RULE_PRESETS, buildRegexFromKeywords } from "../utils/carrierRuleBuilder";
 
@@ -27,23 +28,30 @@ interface CarrierRulesModalProps {
   onClose: () => void;
 }
 
-const EMPTY_RULE: CarrierRule = {
-  id: "",
-  name: "",
-  shipment_regex: "",
-  warehouse_regex: "",
-  ctn_regex: "",
-  default_rotate: 0,
-  enabled: true,
-};
+const DEFAULT_KW_SHIPMENT = "进仓号, FBA单号, SHIP_NO";
+const DEFAULT_KW_WAREHOUSE = "目的仓, 仓库代码, DEST";
+const DEFAULT_KW_CTN = "箱号, 件数, CARTON";
+
+function createDefaultKeywordDraft(): CarrierRule {
+  return {
+    id: "",
+    name: "",
+    shipment_regex: buildRegexFromKeywords("shipment", DEFAULT_KW_SHIPMENT),
+    warehouse_regex: buildRegexFromKeywords("warehouse", DEFAULT_KW_WAREHOUSE),
+    ctn_regex: buildRegexFromKeywords("ctn", DEFAULT_KW_CTN),
+    default_rotate: 0,
+    enabled: true,
+  };
+}
 
 export function CarrierRulesModal({ opened, onClose }: CarrierRulesModalProps) {
+  const reprocessCarrierFiles = useWorkbenchStore((s) => s.reprocessCarrierFiles);
   const [rules, setRules] = useState<CarrierRule[]>([]);
-  const [draft, setDraft] = useState<CarrierRule>({ ...EMPTY_RULE });
+  const [draft, setDraft] = useState<CarrierRule>(() => createDefaultKeywordDraft());
   const [inputMode, setInputMode] = useState<"keywords" | "regex">("keywords");
-  const [kwShipment, setKwShipment] = useState("进仓号, FBA单号, SHIP_NO");
-  const [kwWarehouse, setKwWarehouse] = useState("目的仓, 仓库代码, DEST");
-  const [kwCtn, setKwCtn] = useState("箱号, 件数, CARTON");
+  const [kwShipment, setKwShipment] = useState(DEFAULT_KW_SHIPMENT);
+  const [kwWarehouse, setKwWarehouse] = useState(DEFAULT_KW_WAREHOUSE);
+  const [kwCtn, setKwCtn] = useState(DEFAULT_KW_CTN);
   const [sampleFileName, setSampleFileName] = useState("FBA99CUST1_货代箱唛_LAX9.pdf");
   const [sampleText, setSampleText] = useState("SHIP_NO: FBA99CUST1\nDEST: LAX9\nCARTON 2 OF 5");
   const [testResult, setTestResult] = useState<{
@@ -70,17 +78,37 @@ export function CarrierRulesModal({ opened, onClose }: CarrierRulesModalProps) {
     }
   }, [opened]);
 
+  const buildEffectiveDraft = (): CarrierRule => {
+    if (inputMode !== "keywords") return draft;
+    return {
+      ...draft,
+      shipment_regex: buildRegexFromKeywords("shipment", kwShipment) || draft.shipment_regex,
+      warehouse_regex: buildRegexFromKeywords("warehouse", kwWarehouse) || draft.warehouse_regex,
+      ctn_regex: buildRegexFromKeywords("ctn", kwCtn) || draft.ctn_regex,
+    };
+  };
+
+  const resetToNewKeywordRule = () => {
+    setInputMode("keywords");
+    setKwShipment(DEFAULT_KW_SHIPMENT);
+    setKwWarehouse(DEFAULT_KW_WAREHOUSE);
+    setKwCtn(DEFAULT_KW_CTN);
+    setDraft(createDefaultKeywordDraft());
+  };
+
   const handleSaveRule = async () => {
     if (!draft.name.trim()) {
       notifications.show({ title: "请填写规则名称", message: "例如：顺丰/美森箱唛规则", color: "orange" });
       return;
     }
+    const effective = buildEffectiveDraft();
     setBusy(true);
     try {
-      const saved = await api.saveCarrierRule(draft);
+      const saved = await api.saveCarrierRule(effective);
       await loadRules();
-      setDraft({ ...EMPTY_RULE });
-      notifications.show({ title: "解析规则已保存", message: `规则「${saved.name}」立即对新导入箱唛生效`, color: "green" });
+      resetToNewKeywordRule();
+      void reprocessCarrierFiles();
+      notifications.show({ title: "解析规则已保存", message: `规则「${saved.name}」已生效并自动刷新已导入箱唛`, color: "green" });
     } catch (err) {
       notifications.show({ title: "保存失败", message: (err as Error).message, color: "red" });
     } finally {
@@ -92,6 +120,7 @@ export function CarrierRulesModal({ opened, onClose }: CarrierRulesModalProps) {
     try {
       await api.saveCarrierRule({ ...rule, enabled });
       await loadRules();
+      void reprocessCarrierFiles();
     } catch (err) {
       notifications.show({ title: "更新状态失败", message: (err as Error).message, color: "red" });
     }
@@ -100,8 +129,9 @@ export function CarrierRulesModal({ opened, onClose }: CarrierRulesModalProps) {
   const handleDeleteRule = async (rule: CarrierRule) => {
     try {
       await api.deleteCarrierRule(rule.id);
-      if (draft.id === rule.id) setDraft({ ...EMPTY_RULE });
+      if (draft.id === rule.id) resetToNewKeywordRule();
       await loadRules();
+      void reprocessCarrierFiles();
       notifications.show({ title: "已删除解析规则", message: rule.name, color: "gray" });
     } catch (err) {
       notifications.show({ title: "删除失败", message: (err as Error).message, color: "red" });
@@ -111,8 +141,9 @@ export function CarrierRulesModal({ opened, onClose }: CarrierRulesModalProps) {
   const handleTest = async () => {
     setBusy(true);
     try {
-      const effectiveRules = draft.name.trim()
-        ? [draft, ...rules.filter((r) => r.id !== draft.id)]
+      const effectiveDraft = buildEffectiveDraft();
+      const effectiveRules = effectiveDraft.name.trim()
+        ? [effectiveDraft, ...rules.filter((r) => r.id !== effectiveDraft.id)]
         : rules;
       const res = await api.testCarrierRules({
         sample_text: sampleText,
@@ -326,7 +357,7 @@ export function CarrierRulesModal({ opened, onClose }: CarrierRulesModalProps) {
           />
           <Group gap="xs">
             {draft.id && (
-              <Button size="xs" variant="subtle" onClick={() => setDraft({ ...EMPTY_RULE })}>
+              <Button size="xs" variant="subtle" onClick={resetToNewKeywordRule}>
                 取消编辑
               </Button>
             )}

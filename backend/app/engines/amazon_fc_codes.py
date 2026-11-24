@@ -72,7 +72,8 @@ NOISE_FC_CODES: frozenset[str] = frozenset(
     }
 )
 
-_FC_STA_RE = re.compile(r"(?:FBA|AWD)\s*(?:STA)?[^-\n]{0,24}-\s*([A-Z]{3}\d)\b", re.IGNORECASE)
+_FC_STA_RE = re.compile(r"(?:FBA|AWD)\s*(?:STA)?[^-\n]{0,24}-\s*([A-Z]{3}\d|[A-Z]{4})\b", re.IGNORECASE)
+_FC_KNOWN_TOKEN_RE = re.compile(r"\b([A-Z]{3}\d|[A-Z]{4})\b")
 _FC_TOKEN_RE = re.compile(r"\b([A-Z]{3}\d)\b")
 
 
@@ -80,7 +81,7 @@ def extract_amazon_fc_code(text: str, file_name: str = "") -> str | None:
     """
     提取亚马逊仓库代码，按可信度降序：
     1) FBA/AWD STA - XXXX 锚点；
-    2) 正文中命中高频 FBA 仓点词典的代码；
+    2) 正文中命中高频 FBA 仓点词典的代码（含 IUSB / VJNA 等四字母白名单）；
     3) 文件名中命中高频 FBA 仓点词典的代码；
     4) 正文及文件名中未命中噪声表的 [A-Z]{3}\\d 兜底。
     """
@@ -90,17 +91,17 @@ def extract_amazon_fc_code(text: str, file_name: str = "") -> str | None:
     sta_m = _FC_STA_RE.search(raw_text)
     if sta_m:
         cand = sta_m.group(1).upper()
-        if not cand.startswith("FBA"):
+        if not cand.startswith("FBA") and (cand in KNOWN_AMAZON_FC_CODES or re.match(r"^[A-Z]{3}\d$", cand)):
             return cand
 
     text_up = raw_text.upper()
     file_up = raw_file.upper()
 
-    for cand in _FC_TOKEN_RE.findall(text_up):
+    for cand in _FC_KNOWN_TOKEN_RE.findall(text_up):
         if cand in KNOWN_AMAZON_FC_CODES:
             return cand
 
-    for cand in _FC_TOKEN_RE.findall(file_up):
+    for cand in _FC_KNOWN_TOKEN_RE.findall(file_up):
         if cand in KNOWN_AMAZON_FC_CODES:
             return cand
 

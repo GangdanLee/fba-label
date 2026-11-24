@@ -4,7 +4,7 @@
 
 ## Core Identity & Facts
 - Repository: https://github.com/GangdanLee/fba-label
-- Latest Version: v0.5.0
+- Latest Version: v0.5.1
 - License: GNU Affero General Public License v3.0 (AGPL-3.0)
 - Operating Systems: macOS (Apple Silicon arm64), Windows (64-bit x64)
 - Runtime Architecture: 100% offline local FastAPI + SQLite + React 19 + TypeScript + Mantine 9 workbench (zero cloud uploads, zero accounts)

@@ -75,7 +75,7 @@ def _write_readme_txt(dest_dir: Path, platform_tag: str, version: str) -> None:
             "【本机数据存储目录】\n"
             "  %LOCALAPPDATA%\\FBA Label Studio\\label_print.db\n"
         )
-        + "\n【核心功能与 v0.5.0 新特性】\n"
+        + "\n【核心功能与 v0.5.1 新特性】\n"
         "  - 跨仓按 SKU 归集出纸与核对清单：支持「按货件/按 SKU」切换、同 SKU 跨仓库连续出纸、换仓/换 SKU 分隔提示页、UTF-8-BOM 核对明细 CSV 与按 SKU 拆分打包 ZIP。\n"
         "  - 轻量 Amazon 仓点词典 & 货代免正则关键词模式：内置高频 FBA 仓点白名单减少误识别，货代解析支持直接填写前缀关键词与常见板式一键预设。\n"
         "  - 本机配置与模板一键 ZIP 备份/迁移：支持轻量配置与完整快照 ZIP 导出、增量合并或覆盖导入，导入前自动创建本机数据库回滚备份。\n"
@@ -149,7 +149,7 @@ def _write_sha256(file_path: Path) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="构建跨平台免安装 FBA Label Studio 发行包")
-    parser.add_argument("--version", default="v0.5.0", help="发布版本号 (例如 v0.5.0)")
+    parser.add_argument("--version", default="v0.5.1", help="发布版本号 (例如 v0.5.1)")
     parser.add_argument("--platform-tag", default="", help="覆盖输出平台后缀")
     parser.add_argument("--skip-frontend-build", action="store_true", help="跳过 npm run build（复用已有 frontend/dist）")
     args = parser.parse_args()

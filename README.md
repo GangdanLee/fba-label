@@ -5,7 +5,7 @@
 </p>
 
 <p align="left">
-  <a href="https://github.com/GangdanLee/fba-label/releases"><img src="https://img.shields.io/badge/release-v0.5.0-2563eb" alt="Release v0.5.0"></a>
+  <a href="https://github.com/GangdanLee/fba-label/releases"><img src="https://img.shields.io/badge/release-v0.5.1-2563eb" alt="Release v0.5.1"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-green" alt="GNU AGPL-3.0 License"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-111827" alt="macOS and Windows">
   <img src="https://img.shields.io/badge/thermal-TSPL2%20%7C%20ZPL%20II%20%7C%20TCP%209100-0d9488" alt="TSPL2 ZPL II TCP 9100">
@@ -46,7 +46,7 @@
 
 ## 为什么选择 FBA Label Studio？（能力对比）
 
-| 核心维度 | FBA Label Studio (`v0.5.0`) | 手工 PDF 遮挡 + 通用标签软件 | 在线 FBA 标签处理网站 |
+| 核心维度 | FBA Label Studio (`v0.5.1`) | 手工 PDF 遮挡 + 通用标签软件 | 在线 FBA 标签处理网站 |
 | :--- | :--- | :--- | :--- |
 | **隐私安全性** | **100% 本地离线运行**，SQLite 仅存本机 + **一键 ZIP 备份/迁移** | 本地操作且换机难迁移 | 须上传含店铺公司名/地址的原始 PDF 至第三方服务器 |
 | **外箱敏感信息处理** | **底层 PDF 文字流真擦除 (`apply_redactions`)**，`get_text()` 零残留 | 常见“盖白框”假遮挡，底层文本仍可复制/检索 | 多数按栅格图重压，易模糊条码 |
@@ -152,8 +152,8 @@ cd backend
 ### 3. 本地打包独立分发压缩包
 ```bash
 cd backend && uv pip install -e ".[dev,build]" && cd ..
-backend/.venv/bin/python scripts/build_release.py --version v0.5.0
-backend/.venv/bin/python scripts/smoke_test_release.py release_out/FBA-Label-Studio-v0.5.0-macos-arm64.zip
+backend/.venv/bin/python scripts/build_release.py --version v0.5.1
+backend/.venv/bin/python scripts/smoke_test_release.py release_out/FBA-Label-Studio-v0.5.1-macos-arm64.zip
 ```
 
 ---

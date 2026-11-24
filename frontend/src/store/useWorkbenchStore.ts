@@ -158,7 +158,7 @@ interface WorkbenchState {
 
   // Actions
   setActiveTab: (tab: TabKey) => void;
-  initApp: () => Promise<void>;
+  initApp: (opts?: { discardSavedDraft?: boolean }) => Promise<void>;
   setLastPrintedSpec: (specKey: string) => Promise<void>;
   toggleQuickSpecSwitch: () => Promise<void>;
   getExpectedSpecKey: () => string;
@@ -167,6 +167,7 @@ interface WorkbenchState {
   // 外箱 Actions
   uploadFbaFiles: (files: File[]) => Promise<void>;
   uploadCarrierFiles: (files: File[]) => Promise<void>;
+  reprocessCarrierFiles: () => Promise<void>;
   removeFbaFile: (fileId: string) => Promise<void>;
   removeCarrierFile: (fileId: string) => Promise<void>;
   clearBoxWorkspace: () => void;
@@ -297,7 +298,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
 
   setActiveTab: (tab) => set({ activeTab: tab }),
 
-  initApp: async () => {
+  initApp: async (opts) => {
     try {
       const [profiles, specState, templates, batches, printers, prefs] = await Promise.all([
         api.fetchProfiles(),
@@ -309,7 +310,13 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       ]);
       const prof50 = profiles.find((p) => p.spec_key === "50x30_double");
       const curRedaction = get().redactionOptions;
-      const savedDraft = readEditorDraftFromStorage();
+      if (opts?.discardSavedDraft) {
+        clearEditorDraftFromStorage();
+      }
+      const savedDraft = opts?.discardSavedDraft ? null : readEditorDraftFromStorage();
+      const baseTpl = templates[0]
+        ? { ...templates[0], elements: templates[0].elements.map((e) => ({ ...e })) }
+        : DEFAULT_DRAFT_TEMPLATE;
       set({
         profiles,
         lastPrintedSpec: specState.last_printed_spec || "100x100_single",
@@ -324,7 +331,17 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
               editorDraftDirty: true,
               editorDraftRestored: true,
             }
-          : {}),
+          : opts?.discardSavedDraft
+            ? {
+                draftSku: baseTpl,
+                fnskuQty: baseTpl.defaultQty || 120,
+                editorDraftDirty: false,
+                editorDraftRestored: false,
+                selectedElementId: null,
+                historyPast: [],
+                historyFuture: [],
+              }
+            : {}),
         ...(prefs
           ? {
               fbaCopies: prefs.default_fba_copies,
@@ -344,6 +361,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
             }
           : {}),
       });
+      if (get().fbaFiles.length > 0 || get().carrierFiles.length > 0) {
+        await get().recomputePairing();
+      }
     } catch (err) {
       notifications.show({
         title: "连接后端服务提示",
@@ -484,6 +504,37 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       });
     } catch (err) {
       notifications.show({ title: "货代箱唛处理失败", message: (err as Error).message, color: "red" });
+    } finally {
+      set({ boxBusy: false });
+    }
+  },
+
+  reprocessCarrierFiles: async () => {
+    const curFiles = get().carrierFiles;
+    if (!curFiles.some((f) => f.rawFile)) return;
+    set({ boxBusy: true });
+    try {
+      const oldManual = get().manualAssignments;
+      const nextManual: Record<string, string> = {};
+      const refreshed: UploadedCarrierFile[] = [];
+      for (const f of curFiles) {
+        if (f.rawFile) {
+          const updated = await api.processCarrierFile(f.rawFile);
+          refreshed.push(updated);
+          if (!updated.shipment_id && oldManual[f.file_id]) {
+            nextManual[updated.file_id] = oldManual[f.file_id];
+          }
+        } else {
+          refreshed.push(f);
+          if (oldManual[f.file_id]) {
+            nextManual[f.file_id] = oldManual[f.file_id];
+          }
+        }
+      }
+      set({ carrierFiles: refreshed, manualAssignments: nextManual });
+      await get().recomputePairing();
+    } catch {
+      // 不阻塞规则编辑主流程
     } finally {
       set({ boxBusy: false });
     }

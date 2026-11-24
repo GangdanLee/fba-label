@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActionIcon,
   Alert,
@@ -40,6 +40,19 @@ export function BatchSkuModal({ opened, onClose }: BatchSkuModalProps) {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [pageBreakBetweenSkus, setPageBreakBetweenSkus] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [customDirty, setCustomDirty] = useState(false);
+
+  useEffect(() => {
+    if (!opened || customDirty) return;
+    setItems([
+      {
+        sku: draftSku.sku || "DEMO-SKU-01",
+        fnsku: draftSku.fnsku || "X000DEMO01",
+        title: draftSku.title_clean || "New - Demo Product Item",
+        qty: 4,
+      },
+    ]);
+  }, [opened, customDirty, draftSku.id, draftSku.sku, draftSku.fnsku, draftSku.title_clean]);
 
   const specKey = `${draftSku.widthMm}x${draftSku.heightMm}_${draftSku.layoutType}`;
   const prof = getCalibrationForSpec(specKey);
@@ -63,6 +76,7 @@ export function BatchSkuModal({ opened, onClose }: BatchSkuModalProps) {
       const res = await api.parseFnskuCsv(file);
       setItems(res.items);
       setWarnings(res.warnings || []);
+      setCustomDirty(true);
       notifications.show({
         title: "CSV 清单解析成功",
         message: `共导入 ${res.total_skus} 款 SKU · ${res.total_labels} 张标签`,
@@ -76,6 +90,7 @@ export function BatchSkuModal({ opened, onClose }: BatchSkuModalProps) {
   };
 
   const updateRow = <K extends keyof BatchSkuItem>(idx: number, key: K, val: BatchSkuItem[K]) => {
+    setCustomDirty(true);
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, [key]: val } : it)));
   };
 
@@ -184,9 +199,10 @@ export function BatchSkuModal({ opened, onClose }: BatchSkuModalProps) {
               size="xs"
               variant="light"
               leftSection={<Plus size={13} />}
-              onClick={() =>
-                setItems((prev) => [...prev, { sku: "", fnsku: "", title: "", qty: 2 }])
-              }
+              onClick={() => {
+                setCustomDirty(true);
+                setItems((prev) => [...prev, { sku: "", fnsku: "", title: "", qty: 2 }]);
+              }}
             >
               添加一行
             </Button>
@@ -301,7 +317,16 @@ export function BatchSkuModal({ opened, onClose }: BatchSkuModalProps) {
           )}
 
           <Group gap="xs">
-            <Button size="xs" variant="subtle" color="gray" onClick={() => setItems([])} disabled={items.length === 0}>
+            <Button
+              size="xs"
+              variant="subtle"
+              color="gray"
+              onClick={() => {
+                setCustomDirty(false);
+                setItems([]);
+              }}
+              disabled={items.length === 0}
+            >
               清空清单
             </Button>
             <Button size="xs" variant="default" loading={busy} onClick={() => void handleExportBatchPdf()}>

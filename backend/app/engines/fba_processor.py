@@ -105,7 +105,13 @@ def _extract_sku_info(text: str) -> tuple[str | None, bool]:
             continue
         cand = m.group(1).strip()
         up = cand.upper()
-        if up in _SKU_SKIP_WORDS or re.match(r"^FBA[A-Z0-9]{6,}", up):
+        if (
+            up in _SKU_SKIP_WORDS
+            or cand.isdigit()
+            or re.match(r"^FBA[A-Z0-9]{6,}", up)
+            or re.match(r"^\d+(?:\.\d+)?(?:LB|LBS|KG|G|OZ|PCS|UNITS?|BOX|CTNS?)$", up)
+            or re.match(r"^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$", cand)
+        ):
             continue
         return cand, False
 

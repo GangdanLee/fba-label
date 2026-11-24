@@ -244,6 +244,7 @@ export function EditorStudio() {
     pairing,
     activeGroupId,
     activeBoxIndex,
+    activeBoxKey,
     setEditorMode,
     setActiveTab,
     selectElement,
@@ -289,7 +290,13 @@ export function EditorStudio() {
   const selectedEl = elements.find((e) => e.id === selectedElementId) || null;
 
   const activeGroup = pairing.groups.find((g) => g.shipment_id === activeGroupId) || pairing.groups[0] || null;
-  const activePair = activeGroup?.pairs.find((p) => p.box_index === activeBoxIndex) || activeGroup?.pairs[0] || null;
+  const activePair =
+    activeGroup?.pairs.find(
+      (p) => (p.pair_key || `${p.shipment_id || activeGroup.shipment_id}:${p.box_index}`) === activeBoxKey,
+    ) ||
+    activeGroup?.pairs.find((p) => p.box_index === activeBoxIndex) ||
+    activeGroup?.pairs[0] ||
+    null;
   const activeBoxBg = activePair?.fba_box?.clean_preview_b64 || "";
 
   const recordContinuous = () => {

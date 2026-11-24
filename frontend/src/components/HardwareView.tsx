@@ -213,7 +213,8 @@ export function HardwareView() {
     setBackupBusy(true);
     try {
       const res = await api.importSystemBackup(file, importMode);
-      await initApp();
+      setDraftEdits({});
+      await initApp({ discardSavedDraft: importMode === "replace" });
       await loadBackupSummary();
       notifications.show({
         title: "配置备份恢复成功",

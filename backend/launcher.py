@@ -44,9 +44,10 @@ def find_available_port(
 
 def _open_browser_when_ready(url: str) -> None:
     health_url = f"{url}/api/health"
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     for _ in range(60):
         try:
-            with urllib.request.urlopen(health_url, timeout=0.8) as resp:
+            with opener.open(health_url, timeout=0.8) as resp:
                 if resp.status == 200:
                     webbrowser.open(url)
                     return

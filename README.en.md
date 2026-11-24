@@ -5,7 +5,7 @@
 </p>
 
 <p align="left">
-  <a href="https://github.com/GangdanLee/fba-label/releases"><img src="https://img.shields.io/badge/release-v0.5.0-2563eb" alt="Release v0.5.0"></a>
+  <a href="https://github.com/GangdanLee/fba-label/releases"><img src="https://img.shields.io/badge/release-v0.5.1-2563eb" alt="Release v0.5.1"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-green" alt="GNU AGPL-3.0 License"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-111827" alt="macOS and Windows">
   <img src="https://img.shields.io/badge/thermal-TSPL2%20%7C%20ZPL%20II%20%7C%20TCP%209100-0d9488" alt="TSPL2 ZPL II TCP 9100">
@@ -46,7 +46,7 @@
 
 ## Why FBA Label Studio? (Comparison)
 
-| Feature | FBA Label Studio (`v0.5.0`) | Manual PDF Editor + OpenLabel+ / BarTender | Online FBA Label Web Tools |
+| Feature | FBA Label Studio (`v0.5.1`) | Manual PDF Editor + OpenLabel+ / BarTender | Online FBA Label Web Tools |
 | :--- | :--- | :--- | :--- |
 | **Data Privacy & Backup** | **100% offline local SQLite** + **1-click ZIP backup/migration** | Local but fragmented across machines | Uploads unredacted seller addresses/ASNs to remote servers |
 | **Box Label Redaction** | **True text-stream removal (`apply_redactions`)**, `get_text()` = 0 hits | White overlay boxes leave hidden selectable text in the PDF | Usually rasterizes entire page, blurring barcodes |
@@ -128,8 +128,8 @@ cd backend
 ### Package Standalone Binary Release
 ```bash
 cd backend && uv pip install -e ".[dev,build]" && cd ..
-backend/.venv/bin/python scripts/build_release.py --version v0.5.0
-backend/.venv/bin/python scripts/smoke_test_release.py release_out/FBA-Label-Studio-v0.5.0-macos-arm64.zip
+backend/.venv/bin/python scripts/build_release.py --version v0.5.1
+backend/.venv/bin/python scripts/smoke_test_release.py release_out/FBA-Label-Studio-v0.5.1-macos-arm64.zip
 ```
 
 ---
