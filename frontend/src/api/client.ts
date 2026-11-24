@@ -4,6 +4,7 @@ import type {
   BackupSummary,
   BatchSkuItem,
   BoxGroupBy,
+  BoxPaperSize,
   BoxPrintPreferences,
   CalibrationProfile,
   CanvasElement,
@@ -34,13 +35,19 @@ async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function processFbaFile(file: File, opts: FbaRedactionOptions): Promise<UploadedFbaFile> {
+export async function processFbaFile(
+  file: File,
+  opts: FbaRedactionOptions,
+  paperSize: BoxPaperSize = "100x100",
+): Promise<UploadedFbaFile> {
   const fd = new FormData();
   fd.append("file", file);
   fd.append("redact_ship_from", String(opts.redact_ship_from));
   fd.append("redact_fba_company", String(opts.redact_fba_company));
   fd.append("redact_headers", String(opts.redact_headers));
   fd.append("auto_add_mic", String(opts.auto_add_mic));
+  fd.append("awd_apply_redaction", String(Boolean(opts.awd_apply_redaction)));
+  fd.append("paper_size", paperSize);
   fd.append("offset_x_mm", String(opts.offset_x_mm));
   fd.append("offset_y_mm", String(opts.offset_y_mm));
 
@@ -48,9 +55,15 @@ export async function processFbaFile(file: File, opts: FbaRedactionOptions): Pro
   return { ...res, rawFile: file };
 }
 
-export async function processCarrierFile(file: File, offsetX = 0, offsetY = 0): Promise<UploadedCarrierFile> {
+export async function processCarrierFile(
+  file: File,
+  paperSize: BoxPaperSize = "100x100",
+  offsetX = 0,
+  offsetY = 0,
+): Promise<UploadedCarrierFile> {
   const fd = new FormData();
   fd.append("file", file);
+  fd.append("paper_size", paperSize);
   fd.append("offset_x_mm", String(offsetX));
   fd.append("offset_y_mm", String(offsetY));
   const res = await apiJson<UploadedCarrierFile>("/api/box/process-carrier", { method: "POST", body: fd });
@@ -87,6 +100,7 @@ export async function exportMergedBoxPdf(payload: {
   carrier_pdfs_b64: Record<string, string>;
   queue: PrintQueueItem[];
   overlay_elements?: CanvasElement[];
+  paper_size?: BoxPaperSize;
 }): Promise<{ page_count: number; pdf_b64: string }> {
   return apiJson<{ page_count: number; pdf_b64: string }>("/api/box/export-merged-pdf", {
     method: "POST",
@@ -116,6 +130,7 @@ export async function exportBoxSkuZip(payload: {
   insert_separator_pages: boolean;
   force_unlocked?: boolean;
   overlay_elements?: CanvasElement[];
+  paper_size?: BoxPaperSize;
 }): Promise<{
   filename: string;
   file_count: number;

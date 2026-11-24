@@ -5,14 +5,14 @@
 </p>
 
 <p align="left">
-  <a href="https://github.com/GangdanLee/fba-label/releases"><img src="https://img.shields.io/badge/release-v0.5.1-2563eb" alt="Release v0.5.1"></a>
+  <a href="https://github.com/GangdanLee/fba-label/releases"><img src="https://img.shields.io/badge/release-v0.6.0-2563eb" alt="Release v0.6.0"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-green" alt="GNU AGPL-3.0 License"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-111827" alt="macOS and Windows">
   <img src="https://img.shields.io/badge/thermal-TSPL2%20%7C%20ZPL%20II%20%7C%20TCP%209100-0d9488" alt="TSPL2 ZPL II TCP 9100">
   <img src="https://img.shields.io/badge/privacy-100%25%20Local--First-4f46e5" alt="100% Local-First">
 </p>
 
-**FBA Label Studio** is an open-source, **100% local-first** cross-platform desktop workbench (macOS & Windows) for **Amazon FBA box label privacy redaction**, **4x6 to 100×100mm auto-cropping**, **freight forwarder carton pairing**, **50×30mm 2-up FNSKU label design & CSV batch printing**, and **native TSPL2 / ZPL II / TCP 9100 thermal printing**. Built as a privacy-respecting open-source alternative to manual PDF blackouts, screenshot workarounds, and proprietary tools like OpenLabel+ or BarTender.
+**FBA Label Studio** is an open-source, **100% local-first** cross-platform desktop workbench (macOS & Windows) for **Amazon FBA & AWD box label processing (`100×100mm` / `100×150mm`)**, **privacy redaction**, **freight forwarder carton pairing (`FBA` / `STAR-` / `PO ID`)**, **50×30mm 2-up FNSKU label design & CSV batch printing**, and **native TSPL2 / ZPL II / TCP 9100 thermal printing**. Built as a privacy-respecting open-source alternative to manual PDF blackouts, screenshot workarounds, and proprietary tools like OpenLabel+ or BarTender.
 
 > **TL;DR**: Everything runs locally on your machine with zero cloud uploads, zero accounts, and zero embedded seller data. Powered by Python (`FastAPI`, `PyMuPDF`, `zxing-cpp`) and `React 19` + `Mantine`.
 
@@ -20,11 +20,11 @@
 
 ## Live Screenshots
 
-> **Privacy Note**: Every shipment ID (`FBA88DEMO1`), barcode, SKU, and address shown below was synthetically generated in an isolated sandbox. No real merchant or customer data exists in this repository.
+> **Privacy Note**: Every shipment ID (`STAR-DEMOAWD0001`, `FBA88DEMO1`), barcode, SKU, and address shown below was synthetically generated in an isolated sandbox. No real merchant or customer data exists in this repository.
 
-### 1. FBA Box Label Redaction & Freight Forwarder Pairing (`100×100mm`)
-![FBA Label Studio box label privacy redaction and dual-pane carrier pairing workbench](docs/screenshots/01-box-pairing.png)
-*Dual-channel PDF import: physically removes `SHIP FROM` sender addresses and `FBA:` seller company names while preserving Amazon FC destination addresses, auto-crops into a centered `98×98mm` safe frame, stamps `Made In China` when missing, and pairs cartons 1-to-1 by `shipment_id` + box index.*
+### 1. FBA / AWD Box Label Processing & Carrier Pairing (`100×100` / `100×150mm`)
+![FBA Label Studio AWD box label processing, PO ID auto-pairing, and 100x150mm workbench](docs/screenshots/01-box-pairing.png)
+*Dual-channel PDF import for Amazon FBA / AWD box labels and freight forwarder marks: detects AWD fields (`STAR-`, `PO ID`, `SSCC`, official hubs like `IUTL`) while keeping company details intact by default, switches between `100×100mm` and `100×150mm` (`4×6`), pairs carrier labels by `PO ID` automatically, offers one-click `1+1`, and physically redacts standard FBA seller info.*
 
 ### 2. Before/After Redaction Comparison Slider & Auto-Crop Preview
 ![Interactive split slider showing Amazon FBA 4x6 auto-crop and true PDF text-stream redaction](docs/screenshots/02-box-redaction-compare.png)
@@ -46,7 +46,7 @@
 
 ## Why FBA Label Studio? (Comparison)
 
-| Feature | FBA Label Studio (`v0.5.1`) | Manual PDF Editor + OpenLabel+ / BarTender | Online FBA Label Web Tools |
+| Feature | FBA Label Studio (`v0.6.0`) | Manual PDF Editor + OpenLabel+ / BarTender | Online FBA Label Web Tools |
 | :--- | :--- | :--- | :--- |
 | **Data Privacy & Backup** | **100% offline local SQLite** + **1-click ZIP backup/migration** | Local but fragmented across machines | Uploads unredacted seller addresses/ASNs to remote servers |
 | **Box Label Redaction** | **True text-stream removal (`apply_redactions`)**, `get_text()` = 0 hits | White overlay boxes leave hidden selectable text in the PDF | Usually rasterizes entire page, blurring barcodes |
@@ -60,13 +60,13 @@
 
 ## Key Capabilities
 
-1. **Semantic FBA Box Label Redaction & `100×100mm` Auto-Crop**
-   - Supports both English and Chinese Amazon FBA layouts (automatically adapting to swapped left/right `SHIP FROM` vs. `SHIP TO` columns).
-   - Physically strips sender details and `FBA:` company name while keeping destination FC details, auto-centers to `98×98mm`, and optionally stamps `Made In China` without overlapping existing text.
-2. **Shipment-Isolated / Cross-Warehouse SKU Grouping, Persisted Copy Combos & No-Regex Rules**
-   - **By Shipment or Cross-Warehouse by SKU**: Group cartons by `shipment_id` (with warehouse & `1..N` validation) or toggle **By SKU (Cross-Warehouse)** to extract `Single SKU` / `SKU:` (isolating `Mixed SKU`), reorder cartons continuously across warehouses, inject optional **warehouse/SKU separation prompt pages**, export **UTF-8-BOM manifest CSV**, and download **per-SKU ZIP bundles**.
-   - **Flexible Independent Copy Combos (Auto-Persisted)**: Configure separate counts for FBA box vs. carrier labels (`2+1`, `2+2`, `4+2`, `4+4`, `1+1` presets + per-side & per-box overrides); grouping, separator toggle, ratios, order mode, and redaction flags persist in SQLite (`GET/PUT /api/box/preferences`).
-   - **Keyword-Based (No-Regex) Forwarder Parser**: Define forwarder rules by typing comma-separated label keywords or picking one-click templates, alongside full regex mode and the live test runner.
+1. **FBA / AWD Box Label Processing, Dual Size (`100×100` / `100×150mm`) & Semantic Redaction**
+   - **Native Amazon AWD Support (`v0.6.0`)**: Detects `AWD` badges, `SSCC` (16–22 digits), `STAR-` shipment IDs, `PO ID`, `FNSKU`, and official AWD hubs (`IUTL`, `IUSJ`, `IUSP`, etc.). Preserves AWD labels verbatim by default (keeping company details intact and skipping `Made In China` stamping to protect bottom `SSCC` barcodes), offers an opt-in barcode-safe redaction toggle, verifies dual FNSKU + SSCC readability at 203 dpi, and warns on overweight (`>50 lbs`), excess units (`>150`), or `Mixed SKU` with a one-click **`1+1` (`Only one label per box`)** preset.
+   - **FBA True Redaction & Dual-Size Export**: Supports both English and Chinese FBA layouts with vector-clean sender/company removal, selectable `100×100mm` or `100×150mm` (`4×6`) box paper output (persisted across restarts), and a 150+ FC/AWD whitelist.
+2. **Multi-Key Pairing (`FBA` / `STAR-` / `PO ID` / Cross-Warehouse SKU), Persisted Copy Combos & No-Regex Rules**
+   - **Shipment / PO ID / Cross-Warehouse SKU Grouping**: Groups by `shipment_id` (plus automatic cross-file `PO ID` matching for AWD carrier marks) or **By SKU (Cross-Warehouse)** with optional **separation prompt pages**, **UTF-8-BOM manifest CSV**, and **per-SKU ZIP bundles**.
+   - **Flexible Independent Copy Combos (Auto-Persisted)**: Configure separate counts for FBA/AWD box vs. carrier labels (`2+1`, `2+2`, `4+2`, `4+4`, `1+1` presets + per-side & per-box overrides); paper size, grouping, separator toggle, ratios, order mode, and AWD redaction opt-in persist in SQLite (`GET/PUT /api/box/preferences`).
+   - **Keyword-Based (No-Regex) Forwarder Parser**: Define forwarder rules by entering comma-separated label keywords or picking presets (including `AWD 头程箱唛规则`), alongside full regex mode and the live test runner.
 3. **Vector Millimeter Label Designer (with Auto-Draft) & CSV Batch FNSKU Engine**
    - Built-in millimeter-accurate canvas editor (`Barcode1D` with synced human-readable text, `QR Code`, `Text`, `Rect`, `Line`, `Image`, compliance badges), `Amazon Product PDF` importer (normalizes `新品` → `New - ` and full-width punctuation), and **`localStorage` auto-draft protection** across accidental refreshes.
    - Batch-render hundreds of SKUs from UTF-8, UTF-8-BOM, GB18030, or TSV spreadsheets with per-element style inheritance and optional SKU-break blanking.
@@ -128,8 +128,8 @@ cd backend
 ### Package Standalone Binary Release
 ```bash
 cd backend && uv pip install -e ".[dev,build]" && cd ..
-backend/.venv/bin/python scripts/build_release.py --version v0.5.1
-backend/.venv/bin/python scripts/smoke_test_release.py release_out/FBA-Label-Studio-v0.5.1-macos-arm64.zip
+backend/.venv/bin/python scripts/build_release.py --version v0.6.0
+backend/.venv/bin/python scripts/smoke_test_release.py release_out/FBA-Label-Studio-v0.6.0-macos-arm64.zip
 ```
 
 ---

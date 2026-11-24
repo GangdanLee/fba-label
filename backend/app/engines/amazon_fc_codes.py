@@ -38,7 +38,10 @@ KNOWN_AMAZON_FC_CODES: frozenset[str] = frozenset(
         "CLT9", "RDU1", "RDU2", "RDU4", "RDU5", "GSO1", "CAE1", "CAE3", "GSP1", "SAV3",
         "AGS1", "ATL2", "ATL6", "ATL8", "SAV4", "RMN3", "MIT2", "JAX2", "JAX3", "JAX5",
         "JAX7", "MCO1", "MCO2", "MCO4", "MIA1", "MIA2", "MIA5", "TPA1", "TPA2", "TPA3",
-        "TPA4", "PBI2", "PBI3", "XLX1", "XLX6", "XLX7", "XLX8", "AWD1", "AWD2", "IUSB",
+        "TPA4", "PBI2", "PBI3", "XLX1", "XLX6", "XLX7", "XLX8",
+        # Amazon AWD 上游仓储与分拨节点 (活跃主仓 + 托盘仓 + 历史兼容节点)
+        "AWD1", "AWD2", "IUSJ", "IUSP", "IUST", "IUSR", "IUSW", "IUTE", "IUTJ", "IUTL",
+        "IUTK", "IUTN", "IUSF", "IUSL", "IUSQ",
         # 加拿大 / 墨西哥
         "YVR1", "YVR2", "YVR3", "YVR4", "YYC1", "YYC4", "YYZ1", "YYZ2", "YYZ3", "YYZ4",
         "YYZ7", "YYZ9", "YOW1", "YOW3", "YHM1", "YOO1", "YUL2", "YUL5", "MEX1", "MEX2",
@@ -73,20 +76,32 @@ NOISE_FC_CODES: frozenset[str] = frozenset(
 )
 
 _FC_STA_RE = re.compile(r"(?:FBA|AWD)\s*(?:STA)?[^-\n]{0,24}-\s*([A-Z]{3}\d|[A-Z]{4})\b", re.IGNORECASE)
+_AWD_HYPHEN_RE = re.compile(r"\b([A-Z]{4}|[A-Z]{3}\d)\s*-\s*AWD\b", re.IGNORECASE)
 _FC_KNOWN_TOKEN_RE = re.compile(r"\b([A-Z]{3}\d|[A-Z]{4})\b")
 _FC_TOKEN_RE = re.compile(r"\b([A-Z]{3}\d)\b")
+_NON_FC_FOUR_WORDS: frozenset[str] = frozenset(
+    {"DEMO", "TEST", "MOCK", "ITEM", "PART", "LINE", "SHIP", "UNIT", "CODE", "SIZE", "CASE", "NAME", "FROM", "MADE", "DATE", "ONLY"}
+)
 
 
 def extract_amazon_fc_code(text: str, file_name: str = "") -> str | None:
     """
-    提取亚马逊仓库代码，按可信度降序：
-    1) FBA/AWD STA - XXXX 锚点；
-    2) 正文中命中高频 FBA 仓点词典的代码（含 IUSB / VJNA 等四字母白名单）；
-    3) 文件名中命中高频 FBA 仓点词典的代码；
-    4) 正文及文件名中未命中噪声表的 [A-Z]{3}\\d 兜底。
+    提取亚马逊仓库代码（同时支持 FBA FC 与 AWD 节点），按可信度降序：
+    1) FBA/AWD STA - XXXX 或已知 AWD 仓点锚点（如 IUTL- AWD 3PL）；
+    2) 正文中命中高频 FBA/AWD 仓点词典的代码（含 IUTL / IUSJ 等四字母节点）；
+    3) 文件名中命中高频 FBA/AWD 仓点词典的代码；
+    4) 正文中未命中噪声表的 XXXX - AWD 新设 AWD 仓点与 [A-Z]{3}\\d 兜底。
     """
     raw_text = text or ""
     raw_file = file_name or ""
+
+    awd_fallback: str | None = None
+    for awd_m in _AWD_HYPHEN_RE.finditer(raw_text):
+        cand = awd_m.group(1).upper()
+        if cand in KNOWN_AMAZON_FC_CODES:
+            return cand
+        if awd_fallback is None and cand not in NOISE_FC_CODES and cand not in _NON_FC_FOUR_WORDS and not cand.startswith("FBA"):
+            awd_fallback = cand
 
     sta_m = _FC_STA_RE.search(raw_text)
     if sta_m:
@@ -104,6 +119,9 @@ def extract_amazon_fc_code(text: str, file_name: str = "") -> str | None:
     for cand in _FC_KNOWN_TOKEN_RE.findall(file_up):
         if cand in KNOWN_AMAZON_FC_CODES:
             return cand
+
+    if awd_fallback:
+        return awd_fallback
 
     for source in (text_up, file_up):
         for cand in _FC_TOKEN_RE.findall(source):

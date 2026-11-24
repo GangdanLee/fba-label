@@ -35,6 +35,7 @@ export function BoxStudio() {
     orderMode,
     stageMode,
     showSafeFrame,
+    boxPaperSize,
     defaultCopies,
     fbaCopies,
     carrierCopies,
@@ -58,6 +59,7 @@ export function BoxStudio() {
     updateRedactionOption,
     setGroupBy,
     setInsertSeparatorPages,
+    setBoxPaperSize,
     setWorkMode,
     setOrderMode,
     setStageMode,
@@ -134,10 +136,15 @@ export function BoxStudio() {
       carrier_pdfs_b64: carMap,
       queue: pairing.queue,
       overlay_elements: boxOverlayElements,
+      paper_size: boxPaperSize,
     });
     const safeName = (activeGroup?.display_label || activeGroup?.shipment_id || "FBA_Box").replace(/[\\/:*?"<>|\s]+/g, "_");
     api.downloadBase64Pdf(res.pdf_b64, `${safeName}_${res.page_count}pages.pdf`);
-    notifications.show({ title: "已导出合并 PDF", message: `共 ${res.page_count} 页 (100×100mm)`, color: "green" });
+    notifications.show({
+      title: "已导出合并 PDF",
+      message: `共 ${res.page_count} 页 (${boxPaperSize === "100x150" ? "100×150mm" : "100×100mm"})`,
+      color: "green",
+    });
   };
 
   const handleExportManifestCsv = async () => {
@@ -165,6 +172,7 @@ export function BoxStudio() {
         insert_separator_pages: insertSeparatorPages,
         force_unlocked: forceUnlocked,
         overlay_elements: boxOverlayElements,
+        paper_size: boxPaperSize,
       });
       api.downloadBase64File(res.zip_b64, res.filename, "application/zip");
       const byShipment = res.group_by === "shipment";
@@ -183,16 +191,17 @@ export function BoxStudio() {
   const handleOpenPrint = () => {
     if (!pairing.can_print || !activeGroup) return;
     const groupTitle = activeGroup.display_label || activeGroup.shipment_id;
+    const activeSpecKey = boxPaperSize === "100x150" ? "100x150_single" : "100x100_single";
     const comboDesc =
       workMode === "fba_only"
         ? `仅FBA×${fbaCopies}`
         : workMode === "carrier_only"
           ? `仅箱唛×${carrierCopies}`
-          : `FBA×${fbaCopies}+唛×${carrierCopies}`;
+          : `${activeGroup.has_awd ? "AWD" : "FBA"}×${fbaCopies}+唛×${carrierCopies}`;
     openPrintJob({
       title: `打印外箱任务 · ${groupTitle}`,
       summaryDesc: `${groupTitle}（${comboDesc}，共 ${pairing.total_sheets} 张）`,
-      specKey: "100x100_single",
+      specKey: activeSpecKey,
       batchType: workMode === "fba_only" ? "box_fba_only" : workMode === "carrier_only" ? "box_carrier_only" : "box_paired",
       shipmentId: groupTitle,
       warehouseCode: activeGroup.warehouse_code || "-",
@@ -211,6 +220,7 @@ export function BoxStudio() {
           carrier_pdfs_b64: carMap,
           queue: pairing.queue,
           overlay_elements: boxOverlayElements,
+          paper_size: boxPaperSize,
         });
         return res.pdf_b64;
       },
@@ -254,7 +264,7 @@ export function BoxStudio() {
               点击选取或拖入外箱标 PDF
             </Text>
             <Text size="xs" c="dimmed">
-              自动物理擦除隐私并裁切至 98×98mm
+              自动处理并适配 {boxPaperSize === "100x150" ? "98×148mm" : "98×98mm"} 安全区
             </Text>
             <input
               ref={fbaInputRef}
@@ -269,34 +279,48 @@ export function BoxStudio() {
             />
           </div>
           <Stack gap={4}>
-            {fbaFiles.map((f) => (
-              <Paper key={f.file_id} withBorder p={6} radius="sm">
-                <Group justify="space-between" wrap="nowrap" gap={4}>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <Text size="xs" fw={600} truncate>
-                      {f.file_name}
-                    </Text>
-                    <Group gap={4} mt={2}>
-                      <Badge size="xs" variant="light" color="blue">
-                        {f.shipment_id || "未识别号"}
-                      </Badge>
-                      <Badge size="xs" variant="light" color="green">
-                        {f.page_count} 箱 · 98×98
-                      </Badge>
-                    </Group>
-                  </div>
-                  <ActionIcon
-                    size="xs"
-                    variant="subtle"
-                    color="red"
-                    aria-label={`移除文件 ${f.file_name}`}
-                    onClick={() => void removeFbaFile(f.file_id)}
-                  >
-                    <X size={13} />
-                  </ActionIcon>
-                </Group>
-              </Paper>
-            ))}
+            {fbaFiles.map((f) => {
+              const fileWarns = Array.from(new Set(f.boxes.flatMap((b) => b.compliance_warnings || [])));
+              const isAwdFile = f.label_type === "awd" || f.boxes.some((b) => b.label_type === "awd");
+              return (
+                <Paper key={f.file_id} withBorder p={6} radius="sm">
+                  <Group justify="space-between" wrap="nowrap" gap={4}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <Text size="xs" fw={600} truncate>
+                        {f.file_name}
+                      </Text>
+                      <Group gap={4} mt={2} wrap="wrap">
+                        {isAwdFile && (
+                          <Badge size="xs" variant="filled" color="grape">
+                            AWD
+                          </Badge>
+                        )}
+                        <Badge size="xs" variant="light" color="blue">
+                          {f.shipment_id || "未识别号"}
+                        </Badge>
+                        <Badge size="xs" variant="light" color="green">
+                          {f.page_count} 箱 · {f.paper_size === "100x150" ? "98×148" : "98×98"}
+                        </Badge>
+                      </Group>
+                      {fileWarns.length > 0 && (
+                        <Text size="xs" c="orange" mt={3} lineClamp={2}>
+                          ⚠ {fileWarns[0]}
+                        </Text>
+                      )}
+                    </div>
+                    <ActionIcon
+                      size="xs"
+                      variant="subtle"
+                      color="red"
+                      aria-label={`移除文件 ${f.file_name}`}
+                      onClick={() => void removeFbaFile(f.file_id)}
+                    >
+                      <X size={13} />
+                    </ActionIcon>
+                  </Group>
+                </Paper>
+              );
+            })}
           </Stack>
         </div>
 
@@ -352,7 +376,21 @@ export function BoxStudio() {
           </div>
           <Stack gap={4}>
             {carrierFiles.map((f) => {
-              const unassigned = !f.shipment_id;
+              const autoMatchedGroup = pairing.groups.find((g) => g.pairs.some((p) => p.carrier_box?.file_id === f.file_id));
+              const poCode = f.items.find((it) => it.po_id)?.po_id || null;
+              const manualTarget = manualAssignments[f.file_id] || null;
+              const effectiveId = f.shipment_id || manualTarget || autoMatchedGroup?.shipment_id || null;
+              const unassigned = !effectiveId;
+              const showManualSelect = !f.shipment_id && (!autoMatchedGroup || Boolean(manualTarget));
+              const badgeColor = unassigned
+                ? "orange"
+                : !f.shipment_id && !manualTarget && autoMatchedGroup
+                  ? "teal"
+                  : "green";
+              const badgeLabel =
+                !f.shipment_id && !manualTarget && autoMatchedGroup && poCode
+                  ? `PO:${poCode} → ${autoMatchedGroup.shipment_id}`
+                  : effectiveId || "未带 FBA 编号";
               return (
                 <Paper
                   key={f.file_id}
@@ -367,8 +405,8 @@ export function BoxStudio() {
                         {f.file_name}
                       </Text>
                       <Group gap={4} mt={2}>
-                        <Badge size="xs" variant="light" color={unassigned ? "orange" : "green"}>
-                          {f.shipment_id || manualAssignments[f.file_id] || "未带 FBA 编号"}
+                        <Badge size="xs" variant="light" color={badgeColor}>
+                          {badgeLabel}
                         </Badge>
                         <Badge size="xs" variant="light" color="gray">
                           {f.page_count} 页
@@ -385,7 +423,7 @@ export function BoxStudio() {
                       <X size={13} />
                     </ActionIcon>
                   </Group>
-                  {unassigned && (
+                  {showManualSelect && (
                     <Select
                       mt={6}
                       size="xs"
@@ -723,19 +761,24 @@ export function BoxStudio() {
               {workMode !== "carrier_only" &&
                 (activePair?.fba_box ? (
                   <div className={classes.paperCard}>
-                    <div className={classes.paperSheetSquare}>
+                    <div className={boxPaperSize === "100x150" ? classes.paperSheetRect : classes.paperSheetSquare}>
                       <img src={activePair.fba_box.clean_preview_b64} alt={`外箱标 ${activePair.fba_box.box_id}`} />
                       {showSafeFrame && <div className={classes.safeGuideBox} />}
                     </div>
                     <div className={classes.paperMeta}>
-                      <Badge size="xs" color="blue" variant="light">
-                        亚马逊外箱标
+                      <Badge size="xs" color={activePair.fba_box.label_type === "awd" ? "grape" : "blue"} variant="light">
+                        {activePair.fba_box.label_type === "awd" ? "AWD 箱标" : "亚马逊外箱标"}
                       </Badge>
-                      <span>{activePair.fba_box.box_id} · 98×98mm</span>
+                      <span>
+                        {activePair.fba_box.box_id} · {boxPaperSize === "100x150" ? "98×148mm" : "98×98mm"}
+                      </span>
                     </div>
                   </div>
                 ) : (
-                  <div className={classes.missingSlotCard} onClick={() => fbaInputRef.current?.click()}>
+                  <div
+                    className={`${classes.missingSlotCard} ${boxPaperSize === "100x150" ? classes.missingSlotCardRect : ""}`}
+                    onClick={() => fbaInputRef.current?.click()}
+                  >
                     <Badge color="orange" variant="light">
                       缺同号外箱标
                     </Badge>
@@ -751,7 +794,7 @@ export function BoxStudio() {
               {workMode === "paired" && (
                 <div className={classes.pairBridgeBadge}>
                   <Badge size="xs" color={activePair?.fba_box && activePair?.carrier_box && activeGroup.status === "matched" ? "green" : "orange"} variant="light">
-                    {activeGroup.status === "matched" ? "FBA 编号配对一致" : "待核对配对"}
+                    {activeGroup.status === "matched" ? "编号配对一致" : "待核对配对"}
                   </Badge>
                   <Text size="xs" fw={700} ff="var(--mono)">
                     {activePair?.shipment_id || activeGroup.display_label || activeGroup.shipment_id}
@@ -773,7 +816,7 @@ export function BoxStudio() {
               {workMode !== "fba_only" &&
                 (activePair?.carrier_box ? (
                   <div className={classes.paperCard}>
-                    <div className={classes.paperSheetSquare}>
+                    <div className={boxPaperSize === "100x150" ? classes.paperSheetRect : classes.paperSheetSquare}>
                       <img src={activePair.carrier_box.preview_b64} alt={`货代箱唛 第 ${activePair.carrier_box.box_index} 箱`} />
                       {showSafeFrame && <div className={classes.safeGuideBox} />}
                     </div>
@@ -788,7 +831,10 @@ export function BoxStudio() {
                     </div>
                   </div>
                 ) : (
-                  <div className={classes.missingSlotCard} onClick={() => carInputRef.current?.click()}>
+                  <div
+                    className={`${classes.missingSlotCard} ${boxPaperSize === "100x150" ? classes.missingSlotCardRect : ""}`}
+                    onClick={() => carInputRef.current?.click()}
+                  >
                     <Badge color="orange" variant="light">
                       缺同号货代箱唛
                     </Badge>
@@ -805,8 +851,26 @@ export function BoxStudio() {
         </div>
       </div>
 
-      {/* 右栏：独立配比组合、队列、脱敏规则与出纸 */}
+      {/* 右栏：出纸尺寸、独立配比组合、队列、脱敏规则与出纸 */}
       <div className={classes.rightPanel}>
+        <div className={classes.secTitle}>
+          <span>外箱出纸尺寸</span>
+          <Badge size="xs" color={boxPaperSize === "100x150" ? "indigo" : "gray"} variant="light">
+            {boxPaperSize === "100x150" ? "4×6 推荐AWD" : "通用方标"}
+          </Badge>
+        </div>
+        <SegmentedControl
+          fullWidth
+          size="xs"
+          mb="xs"
+          value={boxPaperSize}
+          onChange={(v) => void setBoxPaperSize(v as typeof boxPaperSize)}
+          data={[
+            { value: "100x100", label: "100×100mm (方标)" },
+            { value: "100x150", label: "100×150mm (4×6 AWD)" },
+          ]}
+        />
+
         <div className={classes.secTitle}>
           <span>每箱标签配比</span>
           <Group gap={4} wrap="nowrap">
@@ -818,6 +882,27 @@ export function BoxStudio() {
             </Badge>
           </Group>
         </div>
+
+        {activeGroup?.has_awd && workMode !== "carrier_only" && fbaCopies > 1 && (
+          <Alert color="blue" variant="light" p="xs" mb="xs">
+            <Stack gap={4}>
+              <Text size="xs" fw={600}>
+                检测到 AWD 标签：官方要求每箱仅贴 1 张 (Only one label per box)，防止重复扫入拒收。
+              </Text>
+              <Group justify="flex-end">
+                <Button size="compact-xs" variant="light" onClick={() => void setCopyCombo(1, carrierCopies)}>
+                  一键切为 1+{carrierCopies}
+                </Button>
+              </Group>
+            </Stack>
+          </Alert>
+        )}
+
+        {activeGroup?.compliance_warnings && activeGroup.compliance_warnings.length > 0 && (
+          <Alert color="orange" variant="light" p="xs" mb="xs" icon={<AlertTriangle size={14} />}>
+            <Text size="xs">{activeGroup.compliance_warnings.join("；")}</Text>
+          </Alert>
+        )}
 
         <Group gap={4} mb="xs" wrap="wrap">
           {[
@@ -967,11 +1052,24 @@ export function BoxStudio() {
             checked={redactionOptions.auto_add_mic}
             onChange={(e) => void updateRedactionOption("auto_add_mic", e.currentTarget.checked)}
           />
+          {fbaFiles.some((f) => f.label_type === "awd") && (
+            <>
+              <Text size="xs" c="teal">
+                AWD 标签默认原样保真（不删除公司名称与发货地）
+              </Text>
+              <Checkbox
+                size="xs"
+                label="仍对 AWD 启用脱敏与补印（仅高级需求）"
+                checked={Boolean(redactionOptions.awd_apply_redaction)}
+                onChange={(e) => void updateRedactionOption("awd_apply_redaction", e.currentTarget.checked)}
+              />
+            </>
+          )}
         </Stack>
 
         <Stack gap={6} mt="auto" pt="md">
           <Button fullWidth disabled={!pairing.can_print || pairing.total_sheets === 0} onClick={handleOpenPrint}>
-            打印所选标签 (100×100mm)
+            打印所选标签 ({boxPaperSize === "100x150" ? "100×150mm" : "100×100mm"})
           </Button>
           <Button
             fullWidth

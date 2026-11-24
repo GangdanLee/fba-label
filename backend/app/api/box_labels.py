@@ -50,15 +50,19 @@ class MergedPdfExportRequest(BaseModel):
     carrier_pdfs_b64: dict[str, str] = Field(default_factory=dict)
     queue: list[PrintQueueItem] = Field(default_factory=list)
     overlay_elements: list[CanvasElement] = Field(default_factory=list)
+    paper_size: Literal["100x100", "100x150"] | None = None
 
 
-def _build_overlay_single_page_pdf(elements: list[CanvasElement], page_mm: float = PAGE_BOX_MM) -> bytes:
-    """将外箱叠加层元素渲染为透明背景单页矢量 PDF。"""
+def _build_overlay_single_page_pdf(
+    elements: list[CanvasElement],
+    page_w_mm: float = PAGE_BOX_MM,
+    page_h_mm: float = PAGE_BOX_MM,
+) -> bytes:
+    """将外箱叠加层元素渲染为透明背景单页矢量 PDF（支持 100×100mm 与 100×150mm）。"""
     buf = io.BytesIO()
-    page_pt = mm_to_pt(page_mm)
-    c = Canvas(buf, pagesize=(page_pt, page_pt))
+    c = Canvas(buf, pagesize=(mm_to_pt(page_w_mm), mm_to_pt(page_h_mm)))
     for el in elements:
-        _draw_element(c, el, ox_mm=0.0, oy_mm=0.0, page_h_mm=page_mm)
+        _draw_element(c, el, ox_mm=0.0, oy_mm=0.0, page_h_mm=page_h_mm)
     c.showPage()
     c.save()
     return buf.getvalue()
@@ -71,6 +75,8 @@ async def process_fba_endpoint(
     redact_fba_company: bool = Form(True),
     redact_headers: bool = Form(False),
     auto_add_mic: bool = Form(True),
+    awd_apply_redaction: bool = Form(False),
+    paper_size: Literal["100x100", "100x150"] = Form("100x100"),
     offset_x_mm: float = Form(0.0),
     offset_y_mm: float = Form(0.0),
 ) -> FbaProcessResponse:
@@ -84,6 +90,10 @@ async def process_fba_endpoint(
         redact_fba_company=redact_fba_company,
         redact_headers=redact_headers,
         auto_add_mic=auto_add_mic,
+        awd_apply_redaction=awd_apply_redaction,
+        paper_size=paper_size,
+        safe_width_mm=98.0,
+        safe_height_mm=148.0 if paper_size == "100x150" else 98.0,
         offset_x_mm=offset_x_mm,
         offset_y_mm=offset_y_mm,
     )
@@ -95,14 +105,17 @@ async def process_fba_endpoint(
             options=opts,
         )
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"FBA 外箱标签处理失败: {exc}") from exc
+        raise HTTPException(status_code=400, detail=f"FBA/AWD 外箱标签处理失败: {exc}") from exc
 
     ship_id = next((b.shipment_id for b in boxes if b.shipment_id), None)
     wh = next((b.warehouse_code for b in boxes if b.warehouse_code), None)
+    label_type: Literal["fba", "awd"] = "awd" if any(b.label_type == "awd" for b in boxes) else "fba"
     return FbaProcessResponse(
         file_id=file_id,
         file_name=file.filename or "fba.pdf",
         page_count=len(boxes),
+        label_type=label_type,
+        paper_size=paper_size,
         shipment_id=ship_id,
         warehouse_code=wh,
         boxes=boxes,
@@ -113,6 +126,7 @@ async def process_fba_endpoint(
 @router.post("/process-carrier", response_model=CarrierProcessResponse)
 async def process_carrier_endpoint(
     file: UploadFile = File(...),
+    paper_size: Literal["100x100", "100x150"] = Form("100x100"),
     offset_x_mm: float = Form(0.0),
     offset_y_mm: float = Form(0.0),
 ) -> CarrierProcessResponse:
@@ -122,12 +136,18 @@ async def process_carrier_endpoint(
 
     file_id = f"car_{uuid.uuid4().hex[:8]}"
     rules = db.list_carrier_rules()
+    target_h = 150.0 if paper_size == "100x150" else PAGE_BOX_MM
+    safe_h = 148.0 if paper_size == "100x150" else 98.0
     try:
         items, out_pdf = process_carrier_pdf(
             raw,
             file_id=file_id,
             file_name=file.filename or "carrier.pdf",
             rules=rules,
+            target_width_mm=PAGE_BOX_MM,
+            target_height_mm=target_h,
+            safe_width_mm=98.0,
+            safe_height_mm=safe_h,
             offset_x_mm=offset_x_mm,
             offset_y_mm=offset_y_mm,
         )
@@ -140,6 +160,7 @@ async def process_carrier_endpoint(
         file_id=file_id,
         file_name=file.filename or "carrier.pdf",
         page_count=len(items),
+        paper_size=paper_size,
         shipment_id=ship_id,
         warehouse_code=wh,
         items=items,
@@ -176,33 +197,40 @@ def _draw_fitted_centered(
     c.drawCentredString(cx_pt, y_pt, clean)
 
 
-def _build_separator_page_pdf(item: PrintQueueItem, page_mm: float = PAGE_BOX_MM) -> bytes:
-    """用 ReportLab 绘制高对比黑白分隔提示页，防止跨仓/换单连续打印贴混。"""
+def _build_separator_page_pdf(
+    item: PrintQueueItem,
+    page_w_mm: float = PAGE_BOX_MM,
+    page_h_mm: float = PAGE_BOX_MM,
+) -> bytes:
+    """用 ReportLab 绘制高对比黑白分隔提示页（自动适配 100×100 / 100×150），防止跨仓/换单连续打印贴混。"""
     buf = io.BytesIO()
-    page_pt = mm_to_pt(page_mm)
-    c = Canvas(buf, pagesize=(page_pt, page_pt))
+    page_w_pt = mm_to_pt(page_w_mm)
+    page_h_pt = mm_to_pt(page_h_mm)
+    c = Canvas(buf, pagesize=(page_w_pt, page_h_pt))
     font_bold = ensure_reportlab_font(prefer_cjk=True, bold=True)
     font_reg = ensure_reportlab_font(prefer_cjk=True, bold=False)
 
     # 外边框与顶部黑底警醒横幅
     c.setStrokeColorRGB(0, 0, 0)
     c.setLineWidth(2.0)
-    c.rect(mm_to_pt(4), mm_to_pt(4), mm_to_pt(page_mm - 8), mm_to_pt(page_mm - 8), stroke=1, fill=0)
+    c.rect(mm_to_pt(4), mm_to_pt(4), mm_to_pt(page_w_mm - 8), mm_to_pt(page_h_mm - 8), stroke=1, fill=0)
     c.setFillColorRGB(0, 0, 0)
-    c.rect(mm_to_pt(4), mm_to_pt(page_mm - 20), mm_to_pt(page_mm - 8), mm_to_pt(16), stroke=0, fill=1)
+    c.rect(mm_to_pt(4), mm_to_pt(page_h_mm - 20), mm_to_pt(page_w_mm - 8), mm_to_pt(16), stroke=0, fill=1)
 
-    max_w_pt = mm_to_pt(page_mm - 16)
-    cx_pt = mm_to_pt(page_mm / 2)
+    max_w_pt = mm_to_pt(page_w_mm - 16)
+    cx_pt = mm_to_pt(page_w_mm / 2)
+    mid_offset_mm = (page_h_mm - PAGE_BOX_MM) * 0.45
 
     c.setFillColorRGB(1, 1, 1)
-    _draw_fitted_centered(c, "出纸分隔提示 · 请核对换仓 / 换款", cx_pt, mm_to_pt(page_mm - 14), max_w_pt, font_bold, 13.0)
+    _draw_fitted_centered(c, "出纸分隔提示 · 请核对换仓 / 换款", cx_pt, mm_to_pt(page_h_mm - 14), max_w_pt, font_bold, 13.0)
 
     c.setFillColorRGB(0, 0, 0)
     wh_text = (item.warehouse_code or "待确认仓库").strip()
-    _draw_fitted_centered(c, wh_text, cx_pt, mm_to_pt(page_mm - 42), max_w_pt, font_bold, 26.0, min_pt=14.0)
+    _draw_fitted_centered(c, wh_text, cx_pt, mm_to_pt(page_h_mm - 42 - mid_offset_mm * 0.4), max_w_pt, font_bold, 26.0, min_pt=14.0)
 
     c.setLineWidth(0.8)
-    c.line(mm_to_pt(12), mm_to_pt(page_mm - 50), mm_to_pt(page_mm - 12), mm_to_pt(page_mm - 50))
+    line_y = page_h_mm - 50 - mid_offset_mm * 0.5
+    c.line(mm_to_pt(12), mm_to_pt(line_y), mm_to_pt(page_w_mm - 12), mm_to_pt(line_y))
 
     detail_str = item.separator_detail or "后续为此仓对应外箱标签"
     sku_disp = (item.sku_text or "").strip()
@@ -214,17 +242,17 @@ def _build_separator_page_pdf(item: PrintQueueItem, page_mm: float = PAGE_BOX_MM
         else:
             sku_disp = "-"
 
-    _draw_fitted_centered(c, f"SKU: {sku_disp}", cx_pt, mm_to_pt(page_mm - 62), max_w_pt, font_bold, 11.0)
+    _draw_fitted_centered(c, f"SKU: {sku_disp}", cx_pt, mm_to_pt(line_y - 12), max_w_pt, font_bold, 11.0)
     _draw_fitted_centered(
         c,
         f"货件编号: {item.shipment_id or '-'}",
         cx_pt,
-        mm_to_pt(page_mm - 72),
+        mm_to_pt(line_y - 22),
         max_w_pt,
         font_reg,
         10.0,
     )
-    _draw_fitted_centered(c, detail_str, cx_pt, mm_to_pt(page_mm - 82), max_w_pt, font_reg, 10.0)
+    _draw_fitted_centered(c, detail_str, cx_pt, mm_to_pt(line_y - 32), max_w_pt, font_reg, 10.0)
 
     c.setFont(font_reg, 8.5)
     c.drawCentredString(cx_pt, mm_to_pt(10), "FBA Label Studio · 分仓防错贴提示页（请勿当外箱标贴箱）")
@@ -238,8 +266,9 @@ def _render_queue_to_pdf_bytes(
     fba_pdfs_b64: dict[str, str],
     carrier_pdfs_b64: dict[str, str],
     overlay_elements: list[CanvasElement] | None = None,
+    paper_size: Literal["100x100", "100x150"] | None = None,
 ) -> bytes:
-    """根据有序队列拼接矢量标签与分隔提示页，输出完整打印 PDF 字节流。"""
+    """根据有序队列拼接矢量标签与分隔提示页，输出完整打印 PDF 字节流（统一 100×100 或 100×150 尺寸）。"""
     if not queue:
         raise HTTPException(status_code=400, detail="打印队列为空")
 
@@ -248,10 +277,6 @@ def _render_queue_to_pdf_bytes(
     overlay_doc: pymupdf.Document | None = None
 
     try:
-        if overlay_elements:
-            ov_bytes = _build_overlay_single_page_pdf(overlay_elements, page_mm=PAGE_BOX_MM)
-            overlay_doc = pymupdf.open(stream=ov_bytes, filetype="pdf")
-
         for fid, b64 in fba_pdfs_b64.items():
             docs_cache[("fba", fid)] = pymupdf.open(stream=base64.b64decode(b64), filetype="pdf")
         for fid, b64 in carrier_pdfs_b64.items():
@@ -260,9 +285,25 @@ def _render_queue_to_pdf_bytes(
         first_fba = next((d for (k, _), d in docs_cache.items() if k == "fba"), None)
         first_car = next((d for (k, _), d in docs_cache.items() if k == "carrier"), None)
 
+        page_w_mm = PAGE_BOX_MM
+        page_h_mm = 150.0 if paper_size == "100x150" else PAGE_BOX_MM
+        if paper_size is None:
+            sample_doc = first_fba or first_car
+            if sample_doc is not None and len(sample_doc) > 0:
+                rect = sample_doc[0].rect
+                w_mm = rect.width * 25.4 / 72.0
+                h_mm = rect.height * 25.4 / 72.0
+                if h_mm > 125.0:
+                    page_w_mm = round(w_mm, 1)
+                    page_h_mm = 150.0
+
+        if overlay_elements:
+            ov_bytes = _build_overlay_single_page_pdf(overlay_elements, page_w_mm=page_w_mm, page_h_mm=page_h_mm)
+            overlay_doc = pymupdf.open(stream=ov_bytes, filetype="pdf")
+
         for item in queue:
             if item.is_separator:
-                sep_bytes = _build_separator_page_pdf(item, page_mm=PAGE_BOX_MM)
+                sep_bytes = _build_separator_page_pdf(item, page_w_mm=page_w_mm, page_h_mm=page_h_mm)
                 with pymupdf.open(stream=sep_bytes, filetype="pdf") as sep_doc:
                     out_doc.insert_pdf(sep_doc, from_page=0, to_page=0)
                 continue
@@ -328,6 +369,7 @@ class SkuZipExportRequest(BaseModel):
     insert_separator_pages: bool = False
     force_unlocked: bool = False
     overlay_elements: list[CanvasElement] = Field(default_factory=list)
+    paper_size: Literal["100x100", "100x150"] | None = None
 
 
 @router.post("/export-merged-pdf")
@@ -338,6 +380,7 @@ async def export_merged_pdf_endpoint(req: MergedPdfExportRequest) -> dict[str, o
         fba_pdfs_b64=req.fba_pdfs_b64,
         carrier_pdfs_b64=req.carrier_pdfs_b64,
         overlay_elements=req.overlay_elements,
+        paper_size=req.paper_size,
     )
     return {
         "page_count": len(req.queue),
@@ -398,6 +441,7 @@ async def export_sku_zip_endpoint(req: SkuZipExportRequest) -> dict[str, object]
                 fba_pdfs_b64=req.fba_pdfs_b64,
                 carrier_pdfs_b64=req.carrier_pdfs_b64,
                 overlay_elements=req.overlay_elements,
+                paper_size=req.paper_size,
             )
             safe_base = re.sub(r'[\\/:*?"<>|\s]+', "_", raw_label)[:48].strip("_") or f"group_{file_count + 1}"
             fname = f"{safe_base}_{len(q)}pages.pdf"

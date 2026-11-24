@@ -3,6 +3,8 @@
 export type TabKey = "box" | "editor" | "batches" | "hardware";
 export type EditorMode = "sku_50x30" | "box_100x100";
 export type BoxGroupBy = "shipment" | "sku";
+export type BoxPaperSize = "100x100" | "100x150";
+export type BoxLabelType = "fba" | "awd";
 export type BoxWorkMode = "paired" | "fba_only" | "carrier_only";
 export type BoxOrderMode = "interleave" | "per_box_group" | "split_all";
 export type BoxStageMode = "dual" | "compare";
@@ -38,6 +40,8 @@ export interface FbaRedactionOptions {
   redact_fba_company: boolean;
   redact_headers: boolean;
   auto_add_mic: boolean;
+  awd_apply_redaction: boolean;
+  paper_size?: BoxPaperSize;
   offset_x_mm: number;
   offset_y_mm: number;
 }
@@ -46,7 +50,11 @@ export interface FbaBoxMeta {
   file_id: string;
   file_name: string;
   page_index: number;
+  label_type?: BoxLabelType;
   shipment_id: string | null;
+  po_id?: string | null;
+  sscc_code?: string | null;
+  fnsku?: string | null;
   box_id: string | null;
   box_index: number;
   total_boxes: number;
@@ -59,6 +67,7 @@ export interface FbaBoxMeta {
   has_made_in_china: boolean;
   mic_auto_added: boolean;
   redacted_regions_count: number;
+  compliance_warnings?: string[];
   clean_preview_b64: string;
   raw_preview_b64: string;
   full_page_b64: string;
@@ -69,6 +78,7 @@ export interface CarrierBoxMeta {
   file_name: string;
   page_index: number;
   shipment_id: string | null;
+  po_id?: string | null;
   assigned_shipment_id: string | null;
   box_index: number;
   total_boxes: number;
@@ -81,6 +91,8 @@ export interface UploadedFbaFile {
   file_id: string;
   file_name: string;
   page_count: number;
+  label_type?: BoxLabelType;
+  paper_size?: BoxPaperSize;
   shipment_id: string | null;
   warehouse_code: string | null;
   boxes: FbaBoxMeta[];
@@ -92,6 +104,7 @@ export interface UploadedCarrierFile {
   file_id: string;
   file_name: string;
   page_count: number;
+  paper_size?: BoxPaperSize;
   shipment_id: string | null;
   warehouse_code: string | null;
   items: CarrierBoxMeta[];
@@ -118,12 +131,14 @@ export interface BoxPrintPreferences {
   default_carrier_copies: number;
   group_by?: BoxGroupBy;
   insert_separator_pages?: boolean;
+  box_paper_size?: BoxPaperSize;
   order_mode: "interleave" | "per_box_group" | "split_all";
   work_mode: "paired" | "fba_only" | "carrier_only";
   redact_ship_from: boolean;
   redact_fba_company: boolean;
   redact_headers: boolean;
   auto_add_mic: boolean;
+  awd_apply_redaction?: boolean;
 }
 
 export interface PairingGroup {
@@ -133,6 +148,8 @@ export interface PairingGroup {
   display_label?: string;
   warehouses?: string[];
   shipment_ids?: string[];
+  has_awd?: boolean;
+  compliance_warnings?: string[];
   status: "matched" | "missing_carrier" | "missing_fba" | "mismatch_detail";
   issues: string[];
   pairs: PairingPairItem[];

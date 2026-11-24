@@ -4,6 +4,7 @@ import * as api from "../api/client";
 import type {
   BoxGroupBy,
   BoxOrderMode,
+  BoxPaperSize,
   BoxStageMode,
   BoxWorkMode,
   CalibrationProfile,
@@ -19,7 +20,12 @@ import type {
   UploadedFbaFile,
 } from "../types";
 import { createDefaultElementsForSpec } from "../utils/code128";
-import { createFictionalCarrierDemoFile, createFictionalFbaDemoFile } from "../utils/demoFixtures";
+import {
+  createFictionalAwdCarrierDemoFile,
+  createFictionalAwdDemoFile,
+  createFictionalCarrierDemoFile,
+  createFictionalFbaDemoFile,
+} from "../utils/demoFixtures";
 
 export const EDITOR_DRAFT_STORAGE_KEY = "fba_label_studio_editor_draft_v1";
 
@@ -115,6 +121,7 @@ interface WorkbenchState {
   manualAssignments: Record<string, string>;
   groupBy: BoxGroupBy;
   insertSeparatorPages: boolean;
+  boxPaperSize: BoxPaperSize;
   workMode: BoxWorkMode;
   orderMode: BoxOrderMode;
   stageMode: BoxStageMode;
@@ -175,6 +182,7 @@ interface WorkbenchState {
   updateRedactionOption: <K extends keyof FbaRedactionOptions>(key: K, val: FbaRedactionOptions[K]) => Promise<void>;
   setGroupBy: (groupBy: BoxGroupBy) => Promise<void>;
   setInsertSeparatorPages: (v: boolean) => Promise<void>;
+  setBoxPaperSize: (size: BoxPaperSize) => Promise<void>;
   setWorkMode: (mode: BoxWorkMode) => Promise<void>;
   setOrderMode: (mode: BoxOrderMode) => Promise<void>;
   setStageMode: (mode: BoxStageMode) => void;
@@ -190,7 +198,7 @@ interface WorkbenchState {
   setActiveGroupId: (sid: string) => void;
   setActiveBoxIndex: (idx: number, pairKey?: string) => void;
   recomputePairing: () => Promise<void>;
-  loadFictionalDemo: (scenario: "dual_mix" | "unassigned" | "clear") => Promise<void>;
+  loadFictionalDemo: (scenario: "dual_mix" | "awd_demo" | "unassigned" | "clear") => Promise<void>;
 
   // 设计器 Actions
   setEditorMode: (mode: EditorMode) => void;
@@ -250,6 +258,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   manualAssignments: {},
   groupBy: "shipment",
   insertSeparatorPages: false,
+  boxPaperSize: "100x100",
   workMode: "paired",
   orderMode: "per_box_group",
   stageMode: "dual",
@@ -268,6 +277,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     redact_fba_company: true,
     redact_headers: false,
     auto_add_mic: true,
+    awd_apply_redaction: false,
     offset_x_mm: 0,
     offset_y_mm: 0,
   },
@@ -349,6 +359,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
               defaultCopies: Math.max(1, prefs.default_fba_copies, prefs.default_carrier_copies),
               groupBy: prefs.group_by || "shipment",
               insertSeparatorPages: Boolean(prefs.insert_separator_pages),
+              boxPaperSize: prefs.box_paper_size || "100x100",
               orderMode: prefs.order_mode,
               workMode: prefs.work_mode,
               redactionOptions: {
@@ -357,6 +368,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
                 redact_fba_company: prefs.redact_fba_company,
                 redact_headers: prefs.redact_headers,
                 auto_add_mic: prefs.auto_add_mic,
+                awd_apply_redaction: Boolean(prefs.awd_apply_redaction),
               },
             }
           : {}),
@@ -376,7 +388,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   getExpectedSpecKey: () => {
     const s = get();
     if (s.activeTab === "box" || (s.activeTab === "editor" && s.editorMode === "box_100x100")) {
-      return "100x100_single";
+      return s.boxPaperSize === "100x150" ? "100x150_single" : "100x100_single";
     }
     return `${s.draftSku.widthMm}x${s.draftSku.heightMm}_${s.draftSku.layoutType}`;
   },
@@ -398,7 +410,13 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     const s = get();
     const target = s.getExpectedSpecKey();
     const skuSpec = `${s.draftSku.widthMm}x${s.draftSku.heightMm}_${s.draftSku.layoutType}`;
-    const next = s.lastPrintedSpec !== target ? target : target === "100x100_single" ? skuSpec : "100x100_single";
+    const boxSpec = s.boxPaperSize === "100x150" ? "100x150_single" : "100x100_single";
+    const next =
+      s.lastPrintedSpec !== target
+        ? target
+        : target === "100x100_single" || target === "100x150_single"
+          ? skuSpec
+          : boxSpec;
     await get().setLastPrintedSpec(next);
     notifications.show({ title: "纸卷记录已更新", message: `当前登记纸卷：${next}`, color: "blue" });
   },
@@ -458,9 +476,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     set({ boxBusy: true });
     try {
       const opts = get().redactionOptions;
+      const pSize = get().boxPaperSize;
       const uploaded: UploadedFbaFile[] = [];
       for (const f of files) {
-        uploaded.push(await api.processFbaFile(f, opts));
+        uploaded.push(await api.processFbaFile(f, opts, pSize));
       }
       set((state) => ({
         fbaFiles: [
@@ -470,9 +489,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         activeGroupId: uploaded[0].shipment_id || state.activeGroupId,
       }));
       await get().recomputePairing();
+      const hasAwd = uploaded.some((u) => u.label_type === "awd");
       notifications.show({
-        title: "外箱标处理完成",
-        message: `已物理擦除敏感字段并居中落版 ${uploaded.reduce((a, b) => a + b.page_count, 0)} 箱`,
+        title: hasAwd ? "AWD / 外箱标处理完成" : "外箱标处理完成",
+        message: hasAwd
+          ? `已按 ${pSize === "100x150" ? "98×148mm" : "98×98mm"} 落版 ${uploaded.reduce((a, b) => a + b.page_count, 0)} 箱（AWD 默认原样保真不删公司信息）`
+          : `已物理擦除敏感字段并居中落版 ${uploaded.reduce((a, b) => a + b.page_count, 0)} 箱`,
         color: "green",
       });
     } catch (err) {
@@ -486,9 +508,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     if (!files.length) return;
     set({ boxBusy: true });
     try {
+      const pSize = get().boxPaperSize;
       const uploaded: UploadedCarrierFile[] = [];
       for (const f of files) {
-        uploaded.push(await api.processCarrierFile(f));
+        uploaded.push(await api.processCarrierFile(f, pSize));
       }
       set((state) => ({
         carrierFiles: [
@@ -499,7 +522,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       await get().recomputePairing();
       notifications.show({
         title: "货代箱唛导入成功",
-        message: `已按 FBA 编号自动归类与 98×98mm 裁切`,
+        message: `已按货件编号自动归类并适配 ${pSize === "100x150" ? "100×150mm" : "100×100mm"} 落版`,
         color: "green",
       });
     } catch (err) {
@@ -514,12 +537,13 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     if (!curFiles.some((f) => f.rawFile)) return;
     set({ boxBusy: true });
     try {
+      const pSize = get().boxPaperSize;
       const oldManual = get().manualAssignments;
       const nextManual: Record<string, string> = {};
       const refreshed: UploadedCarrierFile[] = [];
       for (const f of curFiles) {
         if (f.rawFile) {
-          const updated = await api.processCarrierFile(f.rawFile);
+          const updated = await api.processCarrierFile(f.rawFile, pSize);
           refreshed.push(updated);
           if (!updated.shipment_id && oldManual[f.file_id]) {
             nextManual[updated.file_id] = oldManual[f.file_id];
@@ -575,12 +599,14 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         default_carrier_copies: safeCar,
         group_by: s.groupBy,
         insert_separator_pages: s.insertSeparatorPages,
+        box_paper_size: s.boxPaperSize,
         order_mode: s.orderMode,
         work_mode: s.workMode,
         redact_ship_from: s.redactionOptions.redact_ship_from,
         redact_fba_company: s.redactionOptions.redact_fba_company,
         redact_headers: s.redactionOptions.redact_headers,
         auto_add_mic: s.redactionOptions.auto_add_mic,
+        awd_apply_redaction: Boolean(s.redactionOptions.awd_apply_redaction),
       });
       set({ prefsSavedAt: Date.now() });
     } catch {
@@ -596,9 +622,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     set({ boxBusy: true });
     try {
       const opts = get().redactionOptions;
+      const pSize = get().boxPaperSize;
       const refreshed: UploadedFbaFile[] = [];
       for (const f of curFiles) {
-        if (f.rawFile) refreshed.push(await api.processFbaFile(f.rawFile, opts));
+        if (f.rawFile) refreshed.push(await api.processFbaFile(f.rawFile, opts, pSize));
         else refreshed.push(f);
       }
       set({ fbaFiles: refreshed });
@@ -618,6 +645,35 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     set({ insertSeparatorPages: v });
     await get().recomputePairing();
     void get().persistBoxPrefs();
+  },
+
+  setBoxPaperSize: async (size) => {
+    if (get().boxPaperSize === size) return;
+    set({ boxPaperSize: size });
+    void get().persistBoxPrefs();
+    const curFba = get().fbaFiles;
+    const curCar = get().carrierFiles;
+    if (!curFba.some((f) => f.rawFile) && !curCar.some((f) => f.rawFile)) {
+      return;
+    }
+    set({ boxBusy: true });
+    try {
+      const opts = get().redactionOptions;
+      const nextFba: UploadedFbaFile[] = [];
+      for (const f of curFba) {
+        if (f.rawFile) nextFba.push(await api.processFbaFile(f.rawFile, opts, size));
+        else nextFba.push(f);
+      }
+      const nextCar: UploadedCarrierFile[] = [];
+      for (const c of curCar) {
+        if (c.rawFile) nextCar.push(await api.processCarrierFile(c.rawFile, size));
+        else nextCar.push(c);
+      }
+      set({ fbaFiles: nextFba, carrierFiles: nextCar });
+      await get().recomputePairing();
+    } finally {
+      set({ boxBusy: false });
+    }
   },
 
   setWorkMode: async (mode) => {
@@ -726,6 +782,36 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     }
     set({ boxBusy: true, fbaFiles: [], carrierFiles: [], manualAssignments: {} });
     try {
+      const opts = get().redactionOptions;
+      const pSize = get().boxPaperSize;
+
+      if (scenario === "awd_demo") {
+        const f1 = createFictionalAwdDemoFile("STAR-DEMOAWD0001", "IUTL", "DMPO0001", "DEMO-AWD-SKU1", "X000AWDDM1", 2);
+        const f2 = createFictionalAwdDemoFile("STAR-DEMOAWD0002", "IUSJ", "DMPO0002", "DEMO-AWD-SKU2", "X000AWDDM2", 2);
+        const c1 = createFictionalAwdCarrierDemoFile({ shipmentId: "STAR-DEMOAWD0001", warehouse: "IUTL", totalBoxes: 2 });
+        // 第二票箱唛故意只印 PO ID，验证跨文件自动识别 PO 绑定
+        const c2 = createFictionalAwdCarrierDemoFile({ poId: "DMPO0002", warehouse: "IUSJ", totalBoxes: 2 });
+
+        const [fbaRes1, fbaRes2, carRes1, carRes2] = await Promise.all([
+          api.processFbaFile(f1, opts, pSize),
+          api.processFbaFile(f2, opts, pSize),
+          api.processCarrierFile(c1, pSize),
+          api.processCarrierFile(c2, pSize),
+        ]);
+        set({
+          fbaFiles: [fbaRes1, fbaRes2],
+          carrierFiles: [carRes1, carRes2],
+          activeGroupId: "STAR-DEMOAWD0001",
+        });
+        await get().recomputePairing();
+        notifications.show({
+          title: "已加载虚构 AWD + 货代演示",
+          message: "涵盖 STAR 单号、IUTL/IUSJ 仓点、PO ID 跨文件配对及 AWD 默认原样保真",
+          color: "indigo",
+        });
+        return;
+      }
+
       const f1 = createFictionalFbaDemoFile("FBA00DEMO01", "DMO1", 2, ["DEMO-SKU-A", "DEMO-SKU-B"]);
       const f2 = createFictionalFbaDemoFile("FBA00DEMO02", "DMO2", 2, ["DEMO-SKU-A", "DEMO-SKU-C"]);
       const c1 = createFictionalCarrierDemoFile("FBA00DEMO01", "DMO1", 2);
@@ -734,12 +820,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
           ? createFictionalCarrierDemoFile(null, "DMO1", 2)
           : createFictionalCarrierDemoFile("FBA00DEMO02", "DMO2", 2);
 
-      const opts = get().redactionOptions;
       const [fbaRes1, fbaRes2, carRes1, carRes2] = await Promise.all([
-        api.processFbaFile(f1, opts),
-        api.processFbaFile(f2, opts),
-        api.processCarrierFile(c1),
-        api.processCarrierFile(c2),
+        api.processFbaFile(f1, opts, pSize),
+        api.processFbaFile(f2, opts, pSize),
+        api.processCarrierFile(c1, pSize),
+        api.processCarrierFile(c2, pSize),
       ]);
       set({
         fbaFiles: scenario === "unassigned" ? [fbaRes1] : [fbaRes1, fbaRes2],
@@ -860,13 +945,15 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     set({ editorSim203: v });
     if (!v) return;
     const s = get();
+    const boxH = s.boxPaperSize === "100x150" ? 150 : 100;
+    const boxSpec = s.boxPaperSize === "100x150" ? "100x150_single" : "100x100_single";
     const specKey =
-      s.editorMode === "sku_50x30" ? `${s.draftSku.widthMm}x${s.draftSku.heightMm}_${s.draftSku.layoutType}` : "100x100_single";
+      s.editorMode === "sku_50x30" ? `${s.draftSku.widthMm}x${s.draftSku.heightMm}_${s.draftSku.layoutType}` : boxSpec;
     const prof = s.getCalibrationForSpec(specKey);
     const res = await api.renderFnskuPreview({
       elements: s.editorMode === "sku_50x30" ? s.draftSku.elements : s.boxOverlayElements,
       widthMm: s.editorMode === "sku_50x30" ? s.draftSku.widthMm : 100,
-      heightMm: s.editorMode === "sku_50x30" ? s.draftSku.heightMm : 100,
+      heightMm: s.editorMode === "sku_50x30" ? s.draftSku.heightMm : boxH,
       layoutType: s.editorMode === "sku_50x30" ? s.draftSku.layoutType : "single",
       colGapMm: prof?.col_gap_mm ?? s.colGapMm,
       offsetXMm: prof?.offset_x_mm ?? 0,

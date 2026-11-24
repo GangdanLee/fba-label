@@ -35,7 +35,7 @@ export function buildRegexFromKeywords(
     return `(?:${joined})[:：\\s#-]*([A-Z0-9-]{6,20})`;
   }
   if (kind === "warehouse") {
-    return `(?:${joined})[:：\\s#-]*([A-Z]{3}\\d)`;
+    return `(?:${joined})[:：\\s#-]*([A-Z]{3}\\d|[A-Z]{4})`;
   }
   return `(?:${joined})[:：\\s#-]*(\\d+)\\s*(?:/|of|OF|\\|)\\s*(\\d+)`;
 }
@@ -88,6 +88,23 @@ export const CARRIER_RULE_PRESETS: CarrierRulePreset[] = [
       shipment_regex: buildRegexFromKeywords("shipment", "客户单号, 订单号, FBA编号"),
       warehouse_regex: buildRegexFromKeywords("warehouse", "仓点, 目的港仓, WH"),
       ctn_regex: buildRegexFromKeywords("ctn", "箱序, 编号, CTN"),
+      default_rotate: 0,
+      enabled: true,
+    },
+  },
+  {
+    id: "preset_awd_star",
+    label: "亚马逊 AWD 头程箱唛（货物 ID STAR- / PO ID / IUTL）",
+    description: "匹配如「货物 ID: STAR-...」「DEST: IUTL」「CTN: 1/5」等 AWD 专配箱唛",
+    shipmentKeywords: "货物 ID, 货物ID, Shipment ID, STAR",
+    warehouseKeywords: "目的仓, DEST, AWD, 仓库代码",
+    ctnKeywords: "箱号, 件数, CTN, CARTON",
+    rule: {
+      id: "",
+      name: "AWD 头程箱唛规则",
+      shipment_regex: `(?:货物\\s*ID|货物ID|Shipment\\s*ID|SHIP_NO)[:：\\s#-]*((?:STAR-|FBA)[A-Z0-9-]{6,22})`,
+      warehouse_regex: `(?:目的仓|DEST|仓库代码)[:：\\s#-]*([A-Z]{4}|[A-Z]{3}\\d)`,
+      ctn_regex: buildRegexFromKeywords("ctn", "箱号, 件数, CTN, CARTON"),
       default_rotate: 0,
       enabled: true,
     },

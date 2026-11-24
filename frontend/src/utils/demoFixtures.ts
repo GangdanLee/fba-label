@@ -172,3 +172,86 @@ export function createFictionalCarrierDemoFile(
     : `CarrierMark_NoShipmentId_${warehouse}_${totalBoxes}CTNS.pdf`;
   return buildPdfFileFromPageStreams(wMm, hMm, streams, fname);
 }
+
+/** 构造 100% 虚构高保真 4×6" Amazon AWD 外箱标签 PDF（绝不含任何真实商户或订单数据）。 */
+export function createFictionalAwdDemoFile(
+  shipmentId = "STAR-DEMOAWD0001",
+  warehouse = "IUTL",
+  poId = "DMPO0001",
+  sku = "DEMO-AWD-SKU1",
+  fnsku = "X000AWDDM1",
+  totalBoxes = 2,
+): File {
+  const wMm = 101.6;
+  const hMm = 152.4;
+  const streams: string[] = [];
+
+  for (let i = 1; i <= totalBoxes; i += 1) {
+    const sscc = `000000000000000${String(i).padStart(3, "0")}`;
+    const s = [
+      `0 0 0 rg`,
+      `1.2 w 0 0 0 RG ${pt(4)} ${pt(4)} ${pt(wMm - 8)} ${pt(hMm - 8)} re S`,
+      `0 0 0 rg ${pt(4)} ${pt(hMm - 18)} ${pt(24)} ${pt(14)} re f`,
+      `1 1 1 rg BT /F2 14 Tf ${pt(8)} ${pt(hMm - 13.5)} Td (${pdfEsc("AWD")}) Tj ET`,
+      `0 0 0 rg`,
+      `BT /F2 10 Tf ${pt(36)} ${pt(hMm - 13.5)} Td (${pdfEsc(`Box ${i} of ${totalBoxes}`)}) Tj ET`,
+      `${pt(72)} ${pt(hMm - 18)} ${pt(25.6)} ${pt(14)} re f`,
+      `1 1 1 rg BT /F2 10 Tf ${pt(76)} ${pt(hMm - 13.5)} Td (${pdfEsc("38 lbs")}) Tj ET`,
+      `0 0 0 rg`,
+      `BT /F1 8 Tf ${pt(6)} ${pt(hMm - 23.5)} Td (${pdfEsc(`SKU: ${sku}`)}) Tj ET`,
+      `BT /F2 8.5 Tf ${pt(76)} ${pt(hMm - 23.5)} Td (${pdfEsc("Units: 4")}) Tj ET`,
+      `${pt(4)} ${pt(hMm - 33)} ${pt(wMm - 8)} ${pt(7.5)} re f`,
+      `1 1 1 rg BT /F2 10 Tf ${pt(6)} ${pt(hMm - 31)} Td (${pdfEsc(`FNSKU: ${fnsku}`)}) Tj ET`,
+      `0 0 0 rg`,
+      pdfBarcodeCommands(fnsku, 12, hMm - 51, 77, 16),
+      `BT /F1 7.5 Tf ${pt(45)} ${pt(hMm - 59)} Td (${pdfEsc("Created: 11/24/2026")}) Tj ET`,
+      `BT /F2 11 Tf ${pt(79)} ${pt(hMm - 59)} Td (${pdfEsc(warehouse)}) Tj ET`,
+      `BT /F2 7.5 Tf ${pt(7)} ${pt(hMm - 65)} Td (${pdfEsc("SHIP FROM:")}) Tj ET`,
+      `BT /F1 7 Tf ${pt(7)} ${pt(hMm - 69)} Td (${pdfEsc("Demo Mock Manufacturing Co")}) Tj ET`,
+      `BT /F1 7 Tf ${pt(7)} ${pt(hMm - 73)} Td (${pdfEsc("18 Example Zone, Demo City")}) Tj ET`,
+      `BT /F1 7 Tf ${pt(7)} ${pt(hMm - 77)} Td (${pdfEsc("China")}) Tj ET`,
+      `BT /F2 7.5 Tf ${pt(50)} ${pt(hMm - 65)} Td (${pdfEsc("SHIP TO:")}) Tj ET`,
+      `BT /F2 7 Tf ${pt(50)} ${pt(hMm - 69)} Td (${pdfEsc("AWD Fictional Brand Co")}) Tj ET`,
+      `BT /F1 7 Tf ${pt(50)} ${pt(hMm - 73)} Td (${pdfEsc(`${warehouse}- AWD 3PL (Demo Park, US)`)}) Tj ET`,
+      `BT /F1 7 Tf ${pt(50)} ${pt(hMm - 77)} Td (${pdfEsc("200 Demo Ave, Demo State 00000")}) Tj ET`,
+      `BT /F1 7 Tf ${pt(50)} ${pt(hMm - 81)} Td (${pdfEsc("US")}) Tj ET`,
+      pdfBarcodeCommands(sscc, 10, hMm - 121, 81, 24),
+      `${pt(4)} ${pt(hMm - 131)} ${pt(wMm - 8)} ${pt(8)} re f`,
+      `1 1 1 rg BT /F2 10 Tf ${pt(14)} ${pt(hMm - 129)} Td (${pdfEsc(`SSCC: ${sscc}`)}) Tj ET`,
+      `0 0 0 rg`,
+      `BT /F1 7.5 Tf ${pt(9)} ${pt(hMm - 138)} Td (${pdfEsc(`PO ID: ${poId}, Shipment ID: ${shipmentId}`)}) Tj ET`,
+      `BT /F1 7 Tf ${pt(14)} ${pt(hMm - 143)} Td (${pdfEsc("This label must not be covered. Only one label per box.")}) Tj ET`,
+    ].join("\n");
+    streams.push(s);
+  }
+  return buildPdfFileFromPageStreams(wMm, hMm, streams, `${shipmentId}_Demo_AWD_${warehouse}.pdf`);
+}
+
+export function createFictionalAwdCarrierDemoFile(
+  opts: { shipmentId?: string | null; poId?: string | null; warehouse?: string; totalBoxes?: number },
+): File {
+  const { shipmentId = null, poId = null, warehouse = "IUTL", totalBoxes = 2 } = opts;
+  const wMm = 110;
+  const hMm = 115;
+  const streams: string[] = [];
+
+  for (let ctn = 1; ctn <= totalBoxes; ctn += 1) {
+    const trk = `AWDTRK${warehouse}${ctn}`;
+    const refLine = shipmentId ? shipmentId : poId ? `PO ID: ${poId}` : "UNASSIGNED-MARK";
+    const s = [
+      `1.4 w 0 0 0 RG ${pt(7)} ${pt(10)} ${pt(96)} ${pt(96)} re S`,
+      `1.2 w ${pt(7)} ${pt(hMm - 50)} m ${pt(103)} ${pt(hMm - 50)} l S`,
+      pdfDrawQrMockMatrix(`${refLine}-${ctn}`, 12, hMm - 36, 23),
+      `BT /F2 11 Tf ${pt(13)} ${pt(hMm - 44)} Td (${pdfEsc(`CTNS:${ctn}/${totalBoxes}`)}) Tj ET`,
+      `BT /F2 18 Tf ${pt(58)} ${pt(hMm - 25)} Td (${pdfEsc(warehouse)}) Tj ET`,
+      `BT /F1 10 Tf ${pt(54)} ${pt(hMm - 36)} Td (${pdfEsc("AWD OCEAN DEMO")}) Tj ET`,
+      `BT /F2 10.5 Tf ${pt(20)} ${pt(hMm - 61)} Td (${pdfEsc(refLine)}) Tj ET`,
+      `BT /F2 10 Tf ${pt(38)} ${pt(hMm - 70)} Td (${pdfEsc("MADE IN CHINA")}) Tj ET`,
+      pdfBarcodeCommands(trk, 18, hMm - 92, 74, 17),
+      `BT /F1 8 Tf ${pt(42)} ${pt(hMm - 97)} Td (${pdfEsc(trk)}) Tj ET`,
+    ].join("\n");
+    streams.push(s);
+  }
+  const tag = shipmentId || poId || "NO_ID";
+  return buildPdfFileFromPageStreams(wMm, hMm, streams, `${tag}_AWD_Carrier_${warehouse}.pdf`);
+}

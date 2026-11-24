@@ -19,7 +19,16 @@ UNRECOGNIZED_SKU_KEY = "__UNRECOGNIZED_SKU__"
 def _apply_manual_assignments(
     carriers: list[CarrierBoxMeta],
     assignments: dict[str, str],
+    fba_boxes: list[FbaBoxMeta] | None = None,
 ) -> tuple[list[CarrierBoxMeta], list[CarrierBoxMeta]]:
+    # 构建 PO ID -> 唯一外箱 shipment_id 映射，用于 AWD 货代仅印 PO 号时的自动关联
+    po_to_sids: dict[str, set[str]] = {}
+    for fb in fba_boxes or []:
+        po = (fb.po_id or "").strip().upper()
+        sid = (fb.shipment_id or "").strip().upper()
+        if po and sid:
+            po_to_sids.setdefault(po, set()).add(sid)
+
     assigned: list[CarrierBoxMeta] = []
     unassigned: list[CarrierBoxMeta] = []
     for c in carriers:
@@ -28,6 +37,10 @@ def _apply_manual_assignments(
         manual_sid = assignments.get(key_page) or assignments.get(c_copy.file_id)
         if manual_sid:
             c_copy.assigned_shipment_id = manual_sid.strip().upper()
+        elif not c_copy.shipment_id and c_copy.po_id:
+            cand_sids = po_to_sids.get(c_copy.po_id.strip().upper(), set())
+            if len(cand_sids) == 1:
+                c_copy.assigned_shipment_id = next(iter(cand_sids))
         if c_copy.effective_shipment_id:
             assigned.append(c_copy)
         else:
@@ -298,6 +311,13 @@ def _build_shipment_groups(
                     issues.append(f"箱号序列未完整覆盖 1..{expected_n}")
             status = "mismatch_detail" if issues else "matched"
 
+        has_awd = any(x.label_type == "awd" for x in f_list)
+        comp_warnings: list[str] = []
+        for x in f_list:
+            for w in x.compliance_warnings:
+                if w not in comp_warnings:
+                    comp_warnings.append(w)
+
         groups.append(
             PairingGroup(
                 shipment_id=sid,
@@ -306,6 +326,8 @@ def _build_shipment_groups(
                 display_label=sid,
                 warehouses=[group_wh] if group_wh else [],
                 shipment_ids=[sid],
+                has_awd=has_awd,
+                compliance_warnings=comp_warnings,
                 status=status,
                 issues=issues,
                 pairs=pairs,
@@ -331,10 +353,17 @@ def _aggregate_sku_groups(shipment_groups: list[PairingGroup]) -> tuple[list[Pai
                     "warehouses": set(),
                     "issues": [],
                     "statuses": set(),
+                    "has_awd": False,
+                    "compliance_warnings": [],
                 },
             )
             entry["pairs"].append(pair)  # type: ignore[union-attr]
             entry["shipments"].add(sg.shipment_id)  # type: ignore[union-attr]
+            if pair.fba_box and pair.fba_box.label_type == "awd":
+                entry["has_awd"] = True
+            for w in (pair.fba_box.compliance_warnings if pair.fba_box else []):
+                if w not in entry["compliance_warnings"]:  # type: ignore[operator]
+                    entry["compliance_warnings"].append(w)  # type: ignore[union-attr]
             if pair.warehouse_code:
                 entry["warehouses"].add(pair.warehouse_code)  # type: ignore[union-attr]
             entry["statuses"].add(sg.status)  # type: ignore[union-attr]
@@ -385,6 +414,8 @@ def _aggregate_sku_groups(shipment_groups: list[PairingGroup]) -> tuple[list[Pai
                 display_label=display_label,
                 warehouses=warehouses,
                 shipment_ids=shipments,
+                has_awd=bool(entry["has_awd"]),
+                compliance_warnings=list(entry["compliance_warnings"]),  # type: ignore[arg-type]
                 status=status,
                 issues=issues,
                 pairs=sorted_pairs,
@@ -438,7 +469,7 @@ def _evaluate_group_printable(
 def pair_and_validate(req: PairingRequest) -> PairingResponse:
     """按 FBA 编号隔离或跨仓按 SKU 归集校验，并编排有序打印队列。"""
     assigned_carriers, unassigned_carriers = _apply_manual_assignments(
-        req.carrier_boxes, req.manual_assignments
+        req.carrier_boxes, req.manual_assignments, req.fba_boxes
     )
     shipment_groups = _build_shipment_groups(req, assigned_carriers)
 

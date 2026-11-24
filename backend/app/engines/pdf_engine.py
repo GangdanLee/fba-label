@@ -63,6 +63,7 @@ class PDFEngine(ABC):
         pdf_bytes: bytes,
         page_index: int = 0,
         target_page_mm: float = PAGE_BOX_MM,
+        target_height_mm: float | None = None,
         safe_width_mm: float = SAFE_BOX_MM,
         safe_height_mm: float = SAFE_BOX_MM,
         offset_x_mm: float = 0.0,
@@ -171,13 +172,16 @@ class PyMuPDFEngine(PDFEngine):
         pdf_bytes: bytes,
         page_index: int = 0,
         target_page_mm: float = PAGE_BOX_MM,
+        target_height_mm: float | None = None,
         safe_width_mm: float = SAFE_BOX_MM,
         safe_height_mm: float = SAFE_BOX_MM,
         offset_x_mm: float = 0.0,
         offset_y_mm: float = 0.0,
     ) -> bytes:
-        """保留原 PDF 矢量/原位清晰度，自动去除留白并等比居中落版至 100×100mm（有效区 <=98×98mm）。"""
-        page_pt = mm_to_pt(target_page_mm)
+        """保留原 PDF 矢量/原位清晰度，自动去除留白并等比居中落版至指定尺寸（如 100×100mm 或 100×150mm）。"""
+        eff_h_mm = float(target_height_mm) if target_height_mm is not None else float(target_page_mm)
+        page_w_pt = mm_to_pt(target_page_mm)
+        page_h_pt = mm_to_pt(eff_h_mm)
         safe_w_pt = mm_to_pt(safe_width_mm)
         safe_h_pt = mm_to_pt(safe_height_mm)
         off_x_pt = mm_to_pt(offset_x_mm)
@@ -192,17 +196,17 @@ class PyMuPDFEngine(PDFEngine):
             dest_h = ch * ratio
 
             # 居中落版并叠加打印机毫米校准微调，强制夹紧在页面安全框内
-            cx = (page_pt - dest_w) / 2.0 + off_x_pt
-            cy = (page_pt - dest_h) / 2.0 + off_y_pt
-            margin_x = max(0.0, (page_pt - safe_w_pt) / 2.0)
-            margin_y = max(0.0, (page_pt - safe_h_pt) / 2.0)
-            cx = min(max(cx, margin_x), page_pt - margin_x - dest_w)
-            cy = min(max(cy, margin_y), page_pt - margin_y - dest_h)
+            cx = (page_w_pt - dest_w) / 2.0 + off_x_pt
+            cy = (page_h_pt - dest_h) / 2.0 + off_y_pt
+            margin_x = max(0.0, (page_w_pt - safe_w_pt) / 2.0)
+            margin_y = max(0.0, (page_h_pt - safe_h_pt) / 2.0)
+            cx = min(max(cx, margin_x), page_w_pt - margin_x - dest_w)
+            cy = min(max(cy, margin_y), page_h_pt - margin_y - dest_h)
 
             dest_rect = pymupdf.Rect(cx, cy, cx + dest_w, cy + dest_h)
 
             out_doc = pymupdf.open()
-            out_page = out_doc.new_page(width=page_pt, height=page_pt)
+            out_page = out_doc.new_page(width=page_w_pt, height=page_h_pt)
             out_page.show_pdf_page(dest_rect, src_doc, page_index, clip=clip_rect)
             return out_doc.tobytes(garbage=3, deflate=True)
 

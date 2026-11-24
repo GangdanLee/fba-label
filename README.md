@@ -5,14 +5,14 @@
 </p>
 
 <p align="left">
-  <a href="https://github.com/GangdanLee/fba-label/releases"><img src="https://img.shields.io/badge/release-v0.5.1-2563eb" alt="Release v0.5.1"></a>
+  <a href="https://github.com/GangdanLee/fba-label/releases"><img src="https://img.shields.io/badge/release-v0.6.0-2563eb" alt="Release v0.6.0"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-green" alt="GNU AGPL-3.0 License"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-111827" alt="macOS and Windows">
   <img src="https://img.shields.io/badge/thermal-TSPL2%20%7C%20ZPL%20II%20%7C%20TCP%209100-0d9488" alt="TSPL2 ZPL II TCP 9100">
   <img src="https://img.shields.io/badge/privacy-100%25%20Local--First-4f46e5" alt="100% Local-First">
 </p>
 
-**FBA Label Studio** 是一款开源、**100% 本地离线运行**的跨平台（macOS / Windows）亚马逊 FBA 标签处理、自由排版设计与热敏直连打印工作台。它专为跨境电商卖家与海外仓/打包台打造，将 **FBA 外箱标签物理真脱敏与 `100×100mm` 自动裁切**、**货代箱唛按货件号防错配对**、**FNSKU 产品标签自由画布与 CSV 多 SKU 批量套打**，以及 **TSPL2 / ZPL II / TCP 9100 多机热敏直出**整合进同一本地桌面工具中，彻底替代“手工遮挡 PDF + 截图 + 通用设计软件逐张调整”的繁琐流程。
+**FBA Label Studio** 是一款开源、**100% 本地离线运行**的跨平台（macOS / Windows）亚马逊 FBA & AWD 标签处理、自由排版设计与热敏直连打印工作台。它专为跨境电商卖家与海外仓/打包台打造，将 **FBA & AWD 外箱标签智能处理与 `100×100mm` / `100×150mm` 双尺寸出纸**、**货代箱唛按 `FBA` / `STAR-` / `PO ID` 防错配对**、**FNSKU 产品标签自由画布与 CSV 多 SKU 批量套打**，以及 **TSPL2 / ZPL II / TCP 9100 多机热敏直出**整合进同一本地桌面工具中，彻底替代“手工遮挡 PDF + 截图 + 通用设计软件逐张调整”的繁琐流程。
 
 > **核心定位（TL;DR）**：免费开源的 OpenLabel+ / BarTender 跨境轻量替代方案。所有 PDF 解析、隐私擦除、条码生成与批量记录均在本机 SQLite 完成，**零账号登录、零云端上传、零真实商家数据内置**。
 
@@ -20,11 +20,11 @@
 
 ## 实机界面预览
 
-> 说明：以下全部截图均采集自隔离运行环境，页面展示的货件号（如 `FBA88DEMO1`）、条码与地址信息均由程序实时合成，不含任何真实卖家资料。
+> 说明：以下全部截图均采集自隔离运行环境，页面展示的货件号（如 `STAR-DEMOAWD0001`、`FBA88DEMO1`）、条码与地址信息均由程序实时合成，不含任何真实卖家资料。
 
-### 1. 外箱标签物理脱敏与货代箱唛防错配对（`100×100mm`）
-![FBA Label Studio 外箱标语义真脱敏与货代箱唛按货件号双联配对工作台实机截图](docs/screenshots/01-box-pairing.png)
-*双通道导入亚马逊外箱标与货代箱唛：自动擦除 `SHIP FROM` 发货人地址与 `FBA:` 公司名、居中裁切至 `98×98mm` 安全区、缺失 `Made In China` 时自动补印，并按 `shipment_id` + 箱号自动配对编排出纸队列。*
+### 1. FBA / AWD 外箱标签处理与货代箱唛配对（`100×100` / `100×150mm`）
+![FBA Label Studio AWD 外箱标处理、PO 跨文件自动配对与 100×150mm 工作台实机截图](docs/screenshots/01-box-pairing.png)
+*双通道导入亚马逊 FBA / AWD 外箱标与货代箱唛：自动识别 AWD 标签（`STAR-` / `PO ID` / `SSCC` / `IUTL` 等仓点）并默认原样保真，支持切换 `100×100mm` / `100×150mm`（`4×6`）双尺寸、`PO ID` 跨文件自动配对及「一键切为 1+1」防重贴；对普通 FBA 标签物理擦除发货人与公司名并居中落版。*
 
 ### 2. 脱敏前后卷帘对比与自动裁切示意
 ![亚马逊 FBA 外箱标自动裁切与底层文字流物理脱敏前后对比滑块截图](docs/screenshots/02-box-redaction-compare.png)
@@ -46,7 +46,7 @@
 
 ## 为什么选择 FBA Label Studio？（能力对比）
 
-| 核心维度 | FBA Label Studio (`v0.5.1`) | 手工 PDF 遮挡 + 通用标签软件 | 在线 FBA 标签处理网站 |
+| 核心维度 | FBA Label Studio (`v0.6.0`) | 手工 PDF 遮挡 + 通用标签软件 | 在线 FBA 标签处理网站 |
 | :--- | :--- | :--- | :--- |
 | **隐私安全性** | **100% 本地离线运行**，SQLite 仅存本机 + **一键 ZIP 备份/迁移** | 本地操作且换机难迁移 | 须上传含店铺公司名/地址的原始 PDF 至第三方服务器 |
 | **外箱敏感信息处理** | **底层 PDF 文字流真擦除 (`apply_redactions`)**，`get_text()` 零残留 | 常见“盖白框”假遮挡，底层文本仍可复制/检索 | 多数按栅格图重压，易模糊条码 |
@@ -60,13 +60,13 @@
 
 ## 核心特性详览
 
-1. **外箱标签语义真脱敏与自动裁切（`100×100mm` 单排）**
-   - 自动识别中英文互异左右分栏，物理擦除 PDF 底层文字流中的发货人地址与 `FBA:` 公司名称，完整保留亚马逊仓库地址。
-   - 自动裁切多余空白区，矢量保真居中落版至 `98×98mm` 安全区；可选缺失 `Made In China` 时防压字自动补印；内置 **140+ 亚马逊高频 FC 仓点白名单**，有效过滤 `BOX1`/`CTN1` 等干扰编号。
-2. **双维度防错配对（按货件 / 跨仓按 SKU 归集）、独立配比记忆 & 免正则规则**
-   - **按货件或跨仓按 SKU 归集**：默认按 `shipment_id` 隔离分组并完成三维强校验；多仓库分仓混发时，一键切换 **「按 SKU 跨仓」** 自动识别 `Single SKU` / `SKU:`（混装箱独立隔离），将同款 SKU 跨多仓的标签连续归集、支持 **换仓/换单分隔提示页**、导出 **UTF-8-BOM 出纸核对明细 CSV** 及 **按组打包 ZIP**。
-   - **灵活独立配比组合（自动记忆留存）**：支持「FBA 外箱 + 货代箱唛」分别设定打印张数（内置 `2+1`、`2+2`、`4+2`、`4+4`、`1+1` 一键预设，支持单边微调及按箱自定义覆写），常用配比、归集维度、分隔页、出纸顺序与脱敏规则自动持久化到本机 SQLite。
-   - **免正则货代解析规则**：支持直接填写前缀词（`进仓号 / 目的仓 / 件数`）生成规则并一键套用常见货代板式预设，同时保留高级正则模式与在线试跑调试。
+1. **FBA / AWD 外箱标签语义处理与 `100×100` / `100×150mm` 双尺寸出纸**
+   - **原生兼容 Amazon AWD 标签（`v0.6.0` 新增）**：自动识别 `AWD` 标记、`SSCC`（16–22 位）与 `STAR-` 货件号/`PO ID`，纳入 `IUTL`/`IUSJ`/`IUSP` 等官方 AWD 仓点；遵循 AWD **默认原样矢量保真（不擦公司名、不底部压码补印）**，并提供高级可选开关与 SSCC 条码隔离防护；出纸前自动对 **FNSKU + SSCC 双一维码执行 203dpi 解码体检**，检测超重（>50 lbs）、超件（>150 Units）与禁混箱（Mixed SKU）并提示 **Only one label per box** 一键切换 `1+1`。
+   - **FBA 标签物理真脱敏**：自动识别中英文互异左右分栏，物理擦除 PDF 底层文字流中的发货人地址与 `FBA:` 公司名称，完整保留亚马逊仓库地址，居中裁切至安全区（`100×100mm` 方标或 `100×150mm` 4×6 矩形纸，自动记忆持久化）；内置 **150+ 亚马逊高频 FC/AWD 仓点白名单**，有效过滤 `BOX1`/`CTN1` 等干扰编号。
+2. **多维度防错配对（`FBA` / `STAR-` / `PO ID` / 跨仓按 SKU 归集）、独立配比记忆 & 免正则规则**
+   - **按货件 / PO 或跨仓按 SKU 归集**：默认按 `shipment_id` 隔离分组并完成三维强校验，并支持 **货代箱唛仅印 `PO ID` 时跨文件自动配对**；多仓库分仓混发时一键切换 **「按 SKU 跨仓」** 自动识别 `Single SKU` / `SKU:`（混装箱独立隔离），支持 **换仓/换单分隔提示页**、导出 **UTF-8-BOM 出纸核对明细 CSV** 及 **按组打包 ZIP**。
+   - **灵活独立配比组合（自动记忆留存）**：支持「FBA/AWD 外箱 + 货代箱唛」分别设定打印张数（内置 `2+1`、`2+2`、`4+2`、`4+4`、`1+1` 一键预设与 AWD 一键 `1+1`，支持单边微调及按箱自定义覆写），常用配比、纸张规格、归集维度、分隔页与脱敏规则自动持久化到本机 SQLite。
+   - **免正则货代解析规则**：支持直接填写前缀词（`进仓号 / 货物 ID / 目的仓 / 件数`）生成规则并一键套用常见货代板式与 **AWD 头程箱唛预设**，同时保留高级正则模式与在线试跑调试。
 3. **矢量毫米画布标签设计器（含自动草稿）& CSV 多 SKU 批量套打**
    - 支持 `+ 新建标签`、导入亚马逊产品标 PDF（自动清洗中文成色 `新品` -> `New - ` 及全角标点）、条码与可读文本一体化同步编辑、203dpi 最小模块宽度实时预警，以及 **画布本地自动草稿保护**（刷新页面不丢失）。
    - 支持 UTF-8 / UTF-8-BOM / GB18030 / TSV 多编码 CSV 导入、下载标准模板、在线表格增改数量，并复用当前画布样式批量导出/打印。
@@ -152,8 +152,8 @@ cd backend
 ### 3. 本地打包独立分发压缩包
 ```bash
 cd backend && uv pip install -e ".[dev,build]" && cd ..
-backend/.venv/bin/python scripts/build_release.py --version v0.5.1
-backend/.venv/bin/python scripts/smoke_test_release.py release_out/FBA-Label-Studio-v0.5.1-macos-arm64.zip
+backend/.venv/bin/python scripts/build_release.py --version v0.6.0
+backend/.venv/bin/python scripts/smoke_test_release.py release_out/FBA-Label-Studio-v0.6.0-macos-arm64.zip
 ```
 
 ---

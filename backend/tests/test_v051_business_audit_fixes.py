@@ -216,8 +216,8 @@ def test_sku_zip_skips_mismatch_groups_and_uses_shipment_filename() -> None:
 
 
 def test_four_letter_fc_code_non_sku_filters_and_long_separator_fit() -> None:
-    # 4 字母白名单仓点 IUSB / VJNA 命中，且无 SKU 时不被箱重与日期误判
-    assert extract_amazon_fc_code("SHIP TO: Amazon FC IUSB US") == "IUSB"
+    # 4 字母白名单仓点 IUTL / VJNA 命中，且无 SKU 时不被箱重与日期误判
+    assert extract_amazon_fc_code("SHIP TO: Amazon FC IUTL US") == "IUTL"
     assert extract_amazon_fc_code("Dest Hub VJNA JP") == "VJNA"
     assert _extract_sku_info("Single SKU\n28LB\nPlease Leave Uncovered") == (None, False)
     assert _extract_sku_info("Single SKU\n2026-11-24\nQty 10") == (None, False)
@@ -231,12 +231,12 @@ def test_four_letter_fc_code_non_sku_filters_and_long_separator_fit() -> None:
         box_index=1,
         copy_no=0,
         page_index=-1,
-        label="分隔·IUSB",
+        label="分隔·IUTL",
         file_id="",
-        warehouse_code="IUSB",
+        warehouse_code="IUTL",
         sku_text="SUPER-LONG-SKU-NAME-WITH-MANY-SEGMENTS-VARIANT-XL-2026-BLACK",
         is_separator=True,
-        separator_title="仓库切换 · IUSB",
+        separator_title="仓库切换 · IUTL",
         separator_detail="SKU: SUPER-LONG-SKU-NAME-WITH-MANY-SEGMENTS-VARIANT-XL-2026-BLACK | 货件: FBA00VERYLONGSHIPMENT999",
     )
     sep_pdf = _build_separator_page_pdf(sep_item)
@@ -244,7 +244,7 @@ def test_four_letter_fc_code_non_sku_filters_and_long_separator_fit() -> None:
         assert len(doc) == 1
         assert abs(doc[0].rect.width * 25.4 / 72.0 - 100.0) < 0.2
         txt = doc[0].get_text("text")
-        assert "IUSB" in txt
+        assert "IUTL" in txt
         assert "SUPER-LONG-SKU" in txt
 
 

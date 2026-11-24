@@ -42,12 +42,14 @@ class CanvasElement(BaseModel):
 
 
 class FbaRedactionOptions(BaseModel):
-    """FBA 外箱标语义脱敏与落版参数。"""
+    """FBA / AWD 外箱标语义脱敏与落版参数。"""
 
     redact_ship_from: bool = True
     redact_fba_company: bool = True
     redact_headers: bool = False
     auto_add_mic: bool = True
+    awd_apply_redaction: bool = False
+    paper_size: Literal["100x100", "100x150"] = "100x100"
     safe_width_mm: float = 98.0
     safe_height_mm: float = 98.0
     offset_x_mm: float = 0.0
@@ -55,12 +57,16 @@ class FbaRedactionOptions(BaseModel):
 
 
 class FbaBoxMeta(BaseModel):
-    """单箱 FBA 外箱标解析元数据。"""
+    """单箱 FBA / AWD 外箱标解析元数据。"""
 
     file_id: str = ""
     file_name: str = ""
     page_index: int = 0
+    label_type: Literal["fba", "awd"] = "fba"
     shipment_id: str | None = None
+    po_id: str | None = None
+    sscc_code: str | None = None
+    fnsku: str | None = None
     box_id: str | None = None
     box_index: int = 1
     total_boxes: int = 1
@@ -73,6 +79,7 @@ class FbaBoxMeta(BaseModel):
     has_made_in_china: bool = False
     mic_auto_added: bool = False
     redacted_regions_count: int = 0
+    compliance_warnings: list[str] = Field(default_factory=list)
     clean_preview_b64: str = ""
     raw_preview_b64: str = ""
     full_page_b64: str = ""
@@ -85,6 +92,7 @@ class CarrierBoxMeta(BaseModel):
     file_name: str = ""
     page_index: int = 0
     shipment_id: str | None = None
+    po_id: str | None = None
     assigned_shipment_id: str | None = None
     box_index: int = 1
     total_boxes: int = 1
@@ -98,11 +106,13 @@ class CarrierBoxMeta(BaseModel):
 
 
 class FbaProcessResponse(BaseModel):
-    """FBA 外箱 PDF 批量处理结果。"""
+    """FBA / AWD 外箱 PDF 批量处理结果。"""
 
     file_id: str
     file_name: str
     page_count: int
+    label_type: Literal["fba", "awd"] = "fba"
+    paper_size: Literal["100x100", "100x150"] = "100x100"
     shipment_id: str | None
     warehouse_code: str | None
     boxes: list[FbaBoxMeta]
@@ -115,6 +125,7 @@ class CarrierProcessResponse(BaseModel):
     file_id: str
     file_name: str
     page_count: int
+    paper_size: Literal["100x100", "100x150"] = "100x100"
     shipment_id: str | None
     warehouse_code: str | None
     items: list[CarrierBoxMeta]
@@ -138,7 +149,7 @@ class PairingPairItem(BaseModel):
 
 
 class PairingGroup(BaseModel):
-    """按 FBA 编号或按 SKU 跨仓归集的配对分组。"""
+    """按 FBA/STAR 货件号或按 SKU 跨仓归集的配对分组。"""
 
     shipment_id: str
     warehouse_code: str | None = None
@@ -146,6 +157,8 @@ class PairingGroup(BaseModel):
     display_label: str = ""
     warehouses: list[str] = Field(default_factory=list)
     shipment_ids: list[str] = Field(default_factory=list)
+    has_awd: bool = False
+    compliance_warnings: list[str] = Field(default_factory=list)
     status: Literal["matched", "missing_carrier", "missing_fba", "mismatch_detail"]
     issues: list[str] = Field(default_factory=list)
     pairs: list[PairingPairItem] = Field(default_factory=list)
@@ -202,12 +215,14 @@ class BoxPrintPreferences(BaseModel):
     default_carrier_copies: int = Field(default=1, ge=0, le=20)
     group_by: Literal["shipment", "sku"] = "shipment"
     insert_separator_pages: bool = False
+    box_paper_size: Literal["100x100", "100x150"] = "100x100"
     order_mode: Literal["interleave", "per_box_group", "split_all"] = "per_box_group"
     work_mode: Literal["paired", "fba_only", "carrier_only"] = "paired"
     redact_ship_from: bool = True
     redact_fba_company: bool = True
     redact_headers: bool = False
     auto_add_mic: bool = True
+    awd_apply_redaction: bool = False
 
 
 class PairingResponse(BaseModel):

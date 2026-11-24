@@ -29,6 +29,7 @@ export function StudioHeader() {
     openPrintJob,
     fbaFiles,
     carrierFiles,
+    boxPaperSize,
     orderMode,
     workMode,
     defaultCopies,
@@ -45,13 +46,14 @@ export function StudioHeader() {
     resolveTargetPrinterKey(getCalibrationForSpec(expectedSpec), printers);
   const isMismatch = checkMismatch && lastPrintedSpec !== expectedSpec && sameDevice;
 
+  const boxSizeStr = boxPaperSize === "100x150" ? "100×150mm" : "100×100mm";
   let pageTitle = "外箱标签配对";
-  let crumb = "100×100mm 单排 · 等待导入本地 PDF";
+  let crumb = `${boxSizeStr} 单排 · 等待导入本地 PDF`;
   if (activeTab === "box") {
     const activeGrp = pairing.groups.find((g) => g.shipment_id === activeGroupId) || pairing.groups[0];
     if (activeGrp) {
       const prefix = pairing.group_by === "sku" ? "SKU 归集" : "当前货件";
-      crumb = `100×100mm · ${prefix} ${activeGrp.display_label || activeGrp.shipment_id} (${pairing.groups.length}组)`;
+      crumb = `${boxSizeStr} · ${prefix} ${activeGrp.display_label || activeGrp.shipment_id} (${pairing.groups.length}组)`;
     } else if (pairing.unassigned_carriers.length > 0) {
       crumb = `有 ${pairing.unassigned_carriers.length} 份无编号箱唛待归属`;
     }
@@ -60,7 +62,7 @@ export function StudioHeader() {
     crumb =
       editorMode === "sku_50x30"
         ? `${draftSku.widthMm}×${draftSku.heightMm}mm ${draftSku.layoutType === "double" ? "双排" : "单排"} · ${draftSku.sku}`
-        : "100×100mm 外箱调整";
+        : `${boxSizeStr} 外箱调整`;
   } else if (activeTab === "batches") {
     pageTitle = "打印记录与补打";
     crumb = `共 ${batches.length} 条记录`;
@@ -74,16 +76,17 @@ export function StudioHeader() {
       if (!pairing.can_print || !pairing.active_shipment_id) return;
       const g = pairing.groups.find((x) => x.shipment_id === pairing.active_shipment_id);
       const groupTitle = g?.display_label || pairing.active_shipment_id;
+      const activeSpecKey = boxPaperSize === "100x150" ? "100x150_single" : "100x100_single";
       const comboLabel =
         workMode === "fba_only"
           ? `仅FBA×${fbaCopies}`
           : workMode === "carrier_only"
             ? `仅箱唛×${carrierCopies}`
-            : `FBA×${fbaCopies}+唛×${carrierCopies}`;
+            : `${g?.has_awd ? "AWD" : "FBA"}×${fbaCopies}+唛×${carrierCopies}`;
       openPrintJob({
         title: `打印外箱任务 · ${groupTitle}`,
         summaryDesc: `${groupTitle}（${comboLabel}，共 ${pairing.total_sheets} 张）`,
-        specKey: "100x100_single",
+        specKey: activeSpecKey,
         batchType: workMode === "fba_only" ? "box_fba_only" : workMode === "carrier_only" ? "box_carrier_only" : "box_paired",
         shipmentId: groupTitle,
         warehouseCode: g?.warehouse_code || "-",
@@ -102,6 +105,7 @@ export function StudioHeader() {
             carrier_pdfs_b64: carMap,
             queue: pairing.queue,
             overlay_elements: boxOverlayElements,
+            paper_size: boxPaperSize,
           });
           return merged.pdf_b64;
         },
@@ -159,10 +163,11 @@ export function StudioHeader() {
             data={[
               { value: "clear", label: "空白工作区" },
               { value: "dual_mix", label: "示例：双票配对" },
+              { value: "awd_demo", label: "示例：AWD + 货代配对" },
               { value: "unassigned", label: "示例：无编号箱唛" },
             ]}
             onChange={(val) => {
-              if (val === "clear" || val === "dual_mix" || val === "unassigned") {
+              if (val === "clear" || val === "dual_mix" || val === "awd_demo" || val === "unassigned") {
                 void loadFictionalDemo(val);
               }
             }}

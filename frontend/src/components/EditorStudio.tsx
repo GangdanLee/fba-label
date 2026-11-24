@@ -242,6 +242,7 @@ export function EditorStudio() {
     colGapMm,
     templates,
     pairing,
+    boxPaperSize,
     activeGroupId,
     activeBoxIndex,
     activeBoxKey,
@@ -282,9 +283,11 @@ export function EditorStudio() {
   const [newLayout, setNewLayout] = useState<"double" | "single">("double");
 
   const isSku = editorMode === "sku_50x30";
+  const boxTargetH = boxPaperSize === "100x150" ? 150 : 100;
+  const boxSpecKey = boxPaperSize === "100x150" ? "100x150_single" : "100x100_single";
   const wMm = isSku ? draftSku.widthMm : 100;
-  const hMm = isSku ? draftSku.heightMm : 100;
-  const activeSpecKey = isSku ? `${draftSku.widthMm}x${draftSku.heightMm}_${draftSku.layoutType}` : "100x100_single";
+  const hMm = isSku ? draftSku.heightMm : boxTargetH;
+  const activeSpecKey = isSku ? `${draftSku.widthMm}x${draftSku.heightMm}_${draftSku.layoutType}` : boxSpecKey;
   const activeDpi = (getCalibrationForSpec(activeSpecKey)?.dpi ?? 203) as 203 | 300;
   const elements = isSku ? draftSku.elements : boxOverlayElements;
   const selectedEl = elements.find((e) => e.id === selectedElementId) || null;
@@ -706,7 +709,7 @@ export function EditorStudio() {
               onChange={(v) => setEditorMode(v as typeof editorMode)}
               data={[
                 { value: "sku_50x30", label: `${draftSku.widthMm}×${draftSku.heightMm} 模板` },
-                { value: "box_100x100", label: "100×100 外箱" },
+                { value: "box_100x100", label: `${boxPaperSize === "100x150" ? "100×150" : "100×100"} 外箱` },
               ]}
             />
             <Divider orientation="vertical" my={6} />
@@ -905,7 +908,7 @@ export function EditorStudio() {
                     />
                   ) : !isSku ? (
                     <text x={cw / 2} y={24} textAnchor="middle" fontSize={12} fill="#94a3b8" style={{ pointerEvents: "none" }}>
-                      100×100mm 外箱叠加层（暂无选中外箱底图）
+                      {boxPaperSize === "100x150" ? "100×150mm" : "100×100mm"} 外箱叠加层（暂无选中外箱底图）
                     </text>
                   ) : null}
                   {elements.map((el) =>
@@ -963,7 +966,7 @@ export function EditorStudio() {
               <Badge size="sm" color="blue" variant="light">
                 {activePair?.fba_box
                   ? `正在微调：${activePair.fba_box.shipment_id || "FBA"} 第 ${activePair.box_index} 箱`
-                  : "100×100mm 外箱通用叠加层"}
+                  : `${boxPaperSize === "100x150" ? "100×150mm" : "100×100mm"} 外箱通用叠加层`}
               </Badge>
               <Text size="xs" c="dimmed">
                 已叠加 {elements.length} 项元素
@@ -1032,10 +1035,10 @@ export function EditorStudio() {
               <Text size="xs" fw={600}>
                 {activePair?.fba_box
                   ? `底图：${activePair.fba_box.shipment_id || "未命名货件"} · 第 ${activePair.box_index} 箱`
-                  : "通用 100×100mm 外箱叠加层"}
+                  : `通用 ${boxPaperSize === "100x150" ? "100×150mm" : "100×100mm"} 外箱叠加层`}
               </Text>
               <Text size="xs" c="dimmed">
-                当前规格：100 × 100 mm（单排外箱叠加层）· 共 {elements.length} 项叠加元素。
+                当前规格：100 × {boxPaperSize === "100x150" ? 150 : 100} mm（单排外箱叠加层）· 共 {elements.length} 项叠加元素。
               </Text>
               <Text size="xs" c="dimmed">
                 在此画布添加的文字、二维码、图片或白色遮挡框，会在导出与打印 FBA 外箱标签时以矢量层准确叠印。
@@ -1355,12 +1358,17 @@ export function EditorStudio() {
                 setNewW(100);
                 setNewH(100);
                 setNewLayout("single");
+              } else if (v === "100x150_single") {
+                setNewW(100);
+                setNewH(150);
+                setNewLayout("single");
               }
             }}
             data={[
               { value: "50x30_double", label: "50 × 30 mm · 双排" },
               { value: "40x30_double", label: "40 × 30 mm · 双排" },
               { value: "100x100_single", label: "100 × 100 mm · 单排" },
+              { value: "100x150_single", label: "100 × 150 mm · 单排 (AWD推荐)" },
             ]}
           />
           <SimpleGrid cols={3}>

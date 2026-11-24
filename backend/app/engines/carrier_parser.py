@@ -12,6 +12,11 @@ from app.engines.pdf_engine import PyMuPDFEngine, merge_single_page_pdfs, render
 from app.models.schemas import CarrierBoxMeta, CarrierRule
 
 DEFAULT_SHIPMENT_RE = re.compile(r"\b(FBA[A-Z0-9]{6,12})\b", re.IGNORECASE)
+DEFAULT_STAR_SHIPMENT_RE = re.compile(r"\b(STAR-[A-Z0-9]{10,18})\b", re.IGNORECASE)
+DEFAULT_PO_ID_RE = re.compile(
+    r"(?:采购订单\s*[（(]?\s*PO\s*[）)]?\s*ID|PO\s*(?:ID|NO|#)?)\s*[:：#\s]*([A-Z0-9]{6,14})\b",
+    re.IGNORECASE,
+)
 DEFAULT_WH_RE = re.compile(r"\b([A-Z]{3}\d)\b")
 DEFAULT_CTN_PATTERNS = (
     re.compile(r"CTNS?[:：\s]*(\d+)\s*(?:/|of)\s*(\d+)", re.IGNORECASE),
@@ -47,6 +52,7 @@ def _match_shipment_id(text: str, file_name: str, extra_rules: list[CarrierRule]
         compiled = _compile_safe(rule.shipment_regex, re.IGNORECASE)
         if compiled is not None:
             patterns.append(compiled)
+    patterns.append(DEFAULT_STAR_SHIPMENT_RE)
     patterns.append(DEFAULT_SHIPMENT_RE)
     for rule in _order_enabled_rules(extra_rules):
         if rule.id == "rule_default":
@@ -127,6 +133,16 @@ def _match_ctn(text: str, fallback_idx: int, fallback_total: int, extra_rules: l
     return fallback_idx, fallback_total
 
 
+def _match_po_id(text: str, file_name: str) -> str | None:
+    for source in (text or "", file_name or ""):
+        m = DEFAULT_PO_ID_RE.search(source)
+        if m:
+            cand = m.group(1).strip().upper()
+            if not cand.startswith("STAR-") and not cand.startswith("FBA"):
+                return cand
+    return None
+
+
 def preview_carrier_rules_on_text(
     text: str,
     file_name: str = "",
@@ -134,14 +150,18 @@ def preview_carrier_rules_on_text(
 ) -> dict[str, object]:
     """针对样本文本与文件名运行当前货代箱唛解析规则，便于界面实时调试。"""
     ship_id = _match_shipment_id(text, file_name, rules)
+    po_id = _match_po_id(text, file_name)
     wh = _match_warehouse(text, file_name, rules)
     box_idx, box_tot = _match_ctn(text, fallback_idx=1, fallback_total=1, extra_rules=rules)
-    return {
+    res: dict[str, object] = {
         "shipment_id": ship_id,
         "warehouse_code": wh,
         "box_index": box_idx,
         "total_boxes": box_tot,
     }
+    if po_id:
+        res["po_id"] = po_id
+    return res
 
 
 def process_carrier_pdf(
@@ -149,13 +169,15 @@ def process_carrier_pdf(
     file_id: str,
     file_name: str,
     rules: list[CarrierRule] | None = None,
+    target_width_mm: float = PAGE_BOX_MM,
+    target_height_mm: float = PAGE_BOX_MM,
     safe_width_mm: float = SAFE_BOX_MM,
     safe_height_mm: float = SAFE_BOX_MM,
     offset_x_mm: float = 0.0,
     offset_y_mm: float = 0.0,
     engine: PyMuPDFEngine | None = None,
 ) -> tuple[list[CarrierBoxMeta], bytes]:
-    """逐页提取货代箱唛元信息（无编号保留 None 供人工归属），并居中落版为 100×100mm 单页矢量 PDF。"""
+    """逐页提取货代箱唛元信息（支持 FBA 与 AWD STAR-/PO ID），并居中落版为目标规格单页矢量 PDF。"""
     eng = engine or PyMuPDFEngine()
     items: list[CarrierBoxMeta] = []
     pages_out: list[bytes] = []
@@ -165,13 +187,15 @@ def process_carrier_pdf(
         for idx in range(total_pages):
             text = src_doc[idx].get_text("text")
             ship_id = _match_shipment_id(text, file_name, rules)
+            po_id = _match_po_id(text, file_name)
             wh = _match_warehouse(text, file_name, rules)
             box_idx, box_tot = _match_ctn(text, fallback_idx=idx + 1, fallback_total=total_pages, extra_rules=rules)
 
             centered = eng.crop_and_center_vector_pdf(
                 pdf_bytes,
                 page_index=idx,
-                target_page_mm=PAGE_BOX_MM,
+                target_page_mm=target_width_mm,
+                target_height_mm=target_height_mm,
                 safe_width_mm=safe_width_mm,
                 safe_height_mm=safe_height_mm,
                 offset_x_mm=offset_x_mm,
@@ -184,6 +208,7 @@ def process_carrier_pdf(
                     file_name=file_name,
                     page_index=idx,
                     shipment_id=ship_id,
+                    po_id=po_id,
                     assigned_shipment_id=None,
                     box_index=box_idx,
                     total_boxes=box_tot,
