@@ -1,6 +1,6 @@
 # FBA 一体化标签打印工作台 — 架构设计与项目规划文档
 
-> **文档状态**：v0.4.0 生产架构基线（M1–M4 及 v0.2.0 / v0.3.0 / v0.4.0 均已交付验证）  
+> **文档状态**：v0.5.0 生产架构基线（M1–M4 及 v0.2.0 – v0.5.0 均已交付验证）  
 > **适用平台**：macOS / Windows（跨平台本地独立发行包 & 本地 Web 工作台）  
 > **支持打印机与协议**：兼容 **TSPL2**（TSC / 芯烨 Xprinter XP-420B / 佳博 Gprinter GP-1324D 等 / 4BARCODE / 汉印 / Rollo）、**ZPL II**（斑马 Zebra / 工业机）、系统原生驱动与局域网 **TCP 9100** 直连（`203` / `300 dpi`），支持多机分卷绑定与印刷级 PDF 导出。
 
@@ -175,11 +175,16 @@ fba-label/
 │   │   │   ├── macos_cups.py         # macOS CUPS lp -o raw 与原生 PDF 打印
 │   │   │   ├── windows_raw.py        # Windows win32print RAW 与原生 GDI 备选
 │   │   │   └── simulator.py          # 点阵仿真图导出、干跑指令检验与 zxing-cpp 扫码回归
-│   │   └── api/
-│   │       ├── fnsku.py              # 产品标解析、预览、SKU 库、CSV 导入与批量渲染接口
-│   │       ├── box_labels.py         # 外箱标/箱唛上传、脱敏预览、配对、货代规则管理接口
-│   │       ├── batches.py            # 历史批次查询、快照下载与单箱精准补打
-│   │       └── hardware.py           # 打印机探测、网口探测、自定义校准档与打印路由执行
+│   │   │   ├── fba_processor.py      # FBA 语义脱敏、SKU 提取与裁切
+│   │   │   ├── amazon_fc_codes.py    # 高频亚马逊 FC 仓点词典与噪声编号过滤
+│   │   │   ├── carrier_parser.py     # 货代箱唛字段与规则解析
+│   │   │   └── pairing_engine.py     # 按货件/跨仓按 SKU 归集校验与分隔页编排
+│   │   ├── api/
+│   │   │   ├── fnsku.py              # 产品标解析、预览、SKU 库、CSV 导入与批量渲染接口
+│   │   │   ├── box_labels.py         # 外箱标/箱唛上传、配对、分隔页/CSV/按组 ZIP 导出与规则管理
+│   │   │   ├── batches.py            # 历史批次查询、快照下载与单箱精准补打
+│   │   │   ├── hardware.py           # 打印机探测、网口探测、自定义校准档与打印路由执行
+│   │   │   └── system_backup.py      # 本机配置与快照 ZIP 导出及安全合并/覆盖恢复接口
 │   └── tests/
 │       ├── conftest.py               # 100% 虚构中英文 PDF 测试夹具与数据目录隔离
 │       ├── test_fba_redaction.py     # 物理脱敏残留检测 + 尺寸精度 + 扫码测试
@@ -188,8 +193,10 @@ fba-label/
 │       ├── test_tspl_dryrun.py       # TSPL 指令逆向解码与 API 烟雾测试
 │       ├── test_multi_printer.py     # ZPL/TSPL 300dpi、TCP 9100、SQLite 迁移与硬件路由测试
 │       ├── test_v030_batch_and_rules.py # 多编码 CSV 批量套打、自定义校准卡与货代规则测试
-│       └── test_v040_printers_and_combos.py # 芯烨/佳博识别与 TSPL 加固、独立配比排期及偏好持久化测试
+│       ├── test_v040_printers_and_combos.py # 芯烨/佳博识别与 TSPL 加固、独立配比排期及偏好持久化测试
+│       └── test_v050_sku_group_and_backup.py # 仓点词典、跨仓按 SKU 归集、CSV/ZIP 导出与备份恢复测试
 ├── frontend/                         # React 19 + TypeScript + Mantine 9 + Zustand 工作台
+│   ├── src/utils/                    # code128 / demoFixtures / carrierRuleBuilder (关键词免正则)
 │   └── src/components/               # BoxStudio / CarrierRulesModal / EditorStudio / BatchSkuModal / BatchesView / HardwareView / PrintModal 等
 └── scripts/
     ├── start_mac.command             # macOS 源码开发一键启动脚本
@@ -237,8 +244,10 @@ fba-label/
 ### 4.5 核心 REST API 契约
 - `POST /api/box/parse-fba`：批量上传 1 个或多个 FBA 原始 PDF + 脱敏选项 → **立即自动切分拼版、裁切多余空白区、物理脱敏并按 `98×98mm` 居中落入 `100×100mm` 画布** → 返回各文件解析与提取出的 `shipment_id` 列表及每箱预览图 URL（含裁切前整页框与脱敏对比图）。
 - `POST /api/box/parse-carrier`：批量上传 1 个或多个货代箱唛 PDF → 自动裁切边距至 `98×98mm` 居中并提取 `shipment_id`、`warehouse_code` 与 `CTNS:X/N` 箱号 → 返回箱唛文件池列表。
-- `POST /api/box/validate-pair` / `POST /api/box/pair`：基于当前 FBA 文件池与货代箱唛文件池，**以 `shipment_id`（FBA 编号）为第一配对主键、箱号序号 `1..N` 为第二配对主键**自动聚合为多个配对分组（支持多票货件混导自动拆组及 `default_fba_copies` / `default_carrier_copies` / 单箱独立配比排期），返回每组状态（`matched` / `fba_only` / `carrier_only` / `mismatch_detail`）与出纸队列。
-- `GET/PUT /api/box/preferences`：读取或持久化外箱工作台常用的 `FBA + 货代箱唛` 默认张数配比、作业模式、出纸顺序与脱敏规则偏好至 SQLite `app_state`。
+- `POST /api/box/validate-pair` / `POST /api/box/pair`：基于当前 FBA 文件池与货代箱唛文件池，支持按 `shipment_id` 隔离或 `group_by="sku"` 跨仓库连续归集（含换仓/换 SKU 分隔提示页及 `default_fba_copies` / `default_carrier_copies` / 单箱独立配比排期），返回各组状态、`sku_summary` 与出纸队列。
+- `POST /api/box/export-manifest-csv` & `POST /api/box/export-sku-zip`：导出当前出纸队列 UTF-8-BOM 核对明细 CSV，或按组拆分为独立矢量 PDF 并打包出纸核对明细 ZIP。
+- `GET/PUT /api/box/preferences`：读取或持久化外箱工作台常用的 `FBA + 货代箱唛` 默认张数配比、归集维度 (`group_by`)、分隔页开关、作业模式、出纸顺序与脱敏规则偏好至 SQLite `app_state`。
+- `GET /api/system/backup/summary` & `POST /api/system/backup/export` & `POST /api/system/backup/import`：统计本机配置/快照规模、导出便携式 ZIP 备份（含可选快照且不泄露绝对路径），以及带 Zip Slip 校验与 `pre_import_*.db` 自动留底的 `merge`/`replace` 恢复接口。
 - `POST /api/box/execute`：传入工作模式（配对/仅FBA/仅箱唛）、选中箱列表、每箱套数、出纸顺序、输出通道 → 执行打印或返回印刷级合并 PDF 下载链接，并自动保存历史批次快照。
 - `POST /api/fnsku/import-pdf`：上传本地亚马逊产品标签 PDF → 提取 `fnsku` 与原始标题，返回清洗前后对照结果。
 - `GET/POST/PUT /api/skus`：SKU 档案库增删改查与版式保存。

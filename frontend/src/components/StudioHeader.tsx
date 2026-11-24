@@ -48,8 +48,10 @@ export function StudioHeader() {
   let pageTitle = "外箱标签配对";
   let crumb = "100×100mm 单排 · 等待导入本地 PDF";
   if (activeTab === "box") {
-    if (activeGroupId) {
-      crumb = `100×100mm · 当前货件 ${activeGroupId} (${pairing.groups.length}组)`;
+    const activeGrp = pairing.groups.find((g) => g.shipment_id === activeGroupId) || pairing.groups[0];
+    if (activeGrp) {
+      const prefix = pairing.group_by === "sku" ? "SKU 归集" : "当前货件";
+      crumb = `100×100mm · ${prefix} ${activeGrp.display_label || activeGrp.shipment_id} (${pairing.groups.length}组)`;
     } else if (pairing.unassigned_carriers.length > 0) {
       crumb = `有 ${pairing.unassigned_carriers.length} 份无编号箱唛待归属`;
     }
@@ -71,6 +73,7 @@ export function StudioHeader() {
     if (activeTab === "box") {
       if (!pairing.can_print || !pairing.active_shipment_id) return;
       const g = pairing.groups.find((x) => x.shipment_id === pairing.active_shipment_id);
+      const groupTitle = g?.display_label || pairing.active_shipment_id;
       const comboLabel =
         workMode === "fba_only"
           ? `仅FBA×${fbaCopies}`
@@ -78,11 +81,11 @@ export function StudioHeader() {
             ? `仅箱唛×${carrierCopies}`
             : `FBA×${fbaCopies}+唛×${carrierCopies}`;
       openPrintJob({
-        title: `打印外箱任务 · ${pairing.active_shipment_id}`,
-        summaryDesc: `${pairing.active_shipment_id}（${comboLabel}，共 ${pairing.total_sheets} 张）`,
+        title: `打印外箱任务 · ${groupTitle}`,
+        summaryDesc: `${groupTitle}（${comboLabel}，共 ${pairing.total_sheets} 张）`,
         specKey: "100x100_single",
         batchType: workMode === "fba_only" ? "box_fba_only" : workMode === "carrier_only" ? "box_carrier_only" : "box_paired",
-        shipmentId: pairing.active_shipment_id,
+        shipmentId: groupTitle,
         warehouseCode: g?.warehouse_code || "-",
         totalUnitsOrBoxes: g?.pairs.filter((p) => p.selected).length || 1,
         copiesPerBox: defaultCopies,

@@ -1,10 +1,15 @@
 import type {
+  BackupExportResult,
+  BackupImportResult,
+  BackupSummary,
   BatchSkuItem,
+  BoxGroupBy,
   BoxPrintPreferences,
   CalibrationProfile,
   CanvasElement,
   CarrierRule,
   FbaRedactionOptions,
+  PairingGroup,
   PairingResponse,
   PrintBatchRecord,
   PrinterDevice,
@@ -55,6 +60,8 @@ export async function pairBoxes(payload: {
   fba_boxes: UploadedFbaFile["boxes"];
   carrier_boxes: UploadedCarrierFile["items"];
   manual_assignments: Record<string, string>;
+  group_by?: BoxGroupBy;
+  insert_separator_pages?: boolean;
   work_mode: "paired" | "fba_only" | "carrier_only";
   order_mode: "interleave" | "per_box_group" | "split_all";
   default_copies: number;
@@ -81,6 +88,33 @@ export async function exportMergedBoxPdf(payload: {
   overlay_elements?: CanvasElement[];
 }): Promise<{ page_count: number; pdf_b64: string }> {
   return apiJson<{ page_count: number; pdf_b64: string }>("/api/box/export-merged-pdf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function exportBoxManifestCsv(payload: {
+  queue: PrintQueueItem[];
+  title?: string;
+}): Promise<{ filename: string; row_count: number; csv_b64: string }> {
+  return apiJson("/api/box/export-manifest-csv", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function exportBoxSkuZip(payload: {
+  fba_pdfs_b64: Record<string, string>;
+  carrier_pdfs_b64: Record<string, string>;
+  groups: PairingGroup[];
+  work_mode: "paired" | "fba_only" | "carrier_only";
+  order_mode: "interleave" | "per_box_group" | "split_all";
+  insert_separator_pages: boolean;
+  overlay_elements?: CanvasElement[];
+}): Promise<{ filename: string; file_count: number; total_pages: number; zip_b64: string }> {
+  return apiJson("/api/box/export-sku-zip", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -246,17 +280,21 @@ export async function executePrint(payload: {
   });
 }
 
-export function downloadBase64Pdf(pdfB64: string, fileName: string): void {
-  const bin = atob(pdfB64);
+export function downloadBase64File(b64: string, fileName: string, mimeType = "application/octet-stream"): void {
+  const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
-  const blob = new Blob([bytes], { type: "application/pdf" });
+  const blob = new Blob([bytes], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = fileName;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export function downloadBase64Pdf(pdfB64: string, fileName: string): void {
+  downloadBase64File(pdfB64, fileName, "application/pdf");
 }
 
 export async function fetchCarrierRules(): Promise<CarrierRule[]> {
@@ -346,5 +384,30 @@ export async function saveBoxPreferences(prefs: BoxPrintPreferences): Promise<Bo
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(prefs),
+  });
+}
+
+export async function fetchBackupSummary(): Promise<BackupSummary> {
+  return apiJson<BackupSummary>("/api/system/backup/summary");
+}
+
+export async function exportSystemBackup(includeSnapshots: boolean): Promise<BackupExportResult> {
+  return apiJson<BackupExportResult>("/api/system/backup/export", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ include_snapshots: includeSnapshots }),
+  });
+}
+
+export async function importSystemBackup(
+  file: File,
+  mode: "merge" | "replace",
+): Promise<BackupImportResult> {
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("mode", mode);
+  return apiJson<BackupImportResult>("/api/system/backup/import", {
+    method: "POST",
+    body: fd,
   });
 }

@@ -227,6 +227,8 @@ export function EditorStudio() {
   const {
     editorMode,
     draftSku,
+    editorDraftDirty,
+    editorDraftRestored,
     boxOverlayElements,
     selectedElementId,
     historyPast,
@@ -260,6 +262,7 @@ export function EditorStudio() {
     selectTemplate,
     createNewTemplate,
     saveDraftTemplate,
+    discardEditorDraft,
     removeTemplate,
     importProductPdf,
     openPrintJob,
@@ -742,6 +745,33 @@ export function EditorStudio() {
             </ActionIcon>
           </div>
         </div>
+
+        {isSku && (editorDraftRestored || editorDraftDirty) && (
+          <Alert
+            color={editorDraftRestored ? "teal" : "blue"}
+            variant="light"
+            mx="md"
+            mt={6}
+            p="6px 10px"
+            styles={{ message: { width: "100%" } }}
+          >
+            <Group justify="space-between" wrap="nowrap" gap="xs">
+              <Text size="xs" fw={600}>
+                {editorDraftRestored
+                  ? `已自动恢复上次未保存的草稿：${draftSku.sku}`
+                  : `画布已实时暂存本地草稿（${draftSku.sku}），刷新页面不丢失`}
+              </Text>
+              <Group gap={6} wrap="nowrap">
+                <Button size="compact-xs" variant="light" color="green" onClick={() => void saveDraftTemplate()}>
+                  立即保存至模板库
+                </Button>
+                <Button size="compact-xs" variant="subtle" color="gray" onClick={discardEditorDraft}>
+                  放弃草稿
+                </Button>
+              </Group>
+            </Group>
+          </Alert>
+        )}
 
         <div className={classes.edCanvasStage}>
           {selectedEl && (

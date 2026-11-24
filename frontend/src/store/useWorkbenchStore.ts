@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { notifications } from "@mantine/notifications";
 import * as api from "../api/client";
 import type {
+  BoxGroupBy,
   BoxOrderMode,
   BoxStageMode,
   BoxWorkMode,
@@ -19,6 +20,43 @@ import type {
 } from "../types";
 import { createDefaultElementsForSpec } from "../utils/code128";
 import { createFictionalCarrierDemoFile, createFictionalFbaDemoFile } from "../utils/demoFixtures";
+
+export const EDITOR_DRAFT_STORAGE_KEY = "fba_label_studio_editor_draft_v1";
+
+interface SavedEditorDraft {
+  draftSku: SkuTemplate;
+  fnskuQty: number;
+  updatedAt: number;
+}
+
+function flushEditorDraftNow(draftSku: SkuTemplate, fnskuQty: number): void {
+  try {
+    const payload: SavedEditorDraft = { draftSku, fnskuQty, updatedAt: Date.now() };
+    localStorage.setItem(EDITOR_DRAFT_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore
+  }
+}
+
+function clearEditorDraftFromStorage(): void {
+  try {
+    localStorage.removeItem(EDITOR_DRAFT_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+function readEditorDraftFromStorage(): SavedEditorDraft | null {
+  try {
+    const raw = localStorage.getItem(EDITOR_DRAFT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as SavedEditorDraft;
+    if (!parsed?.draftSku || !Array.isArray(parsed.draftSku.elements)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
 
 export function resolveTargetPrinterKey(
   prof: CalibrationProfile | undefined,
@@ -75,6 +113,8 @@ interface WorkbenchState {
   fbaFiles: UploadedFbaFile[];
   carrierFiles: UploadedCarrierFile[];
   manualAssignments: Record<string, string>;
+  groupBy: BoxGroupBy;
+  insertSeparatorPages: boolean;
   workMode: BoxWorkMode;
   orderMode: BoxOrderMode;
   stageMode: BoxStageMode;
@@ -92,11 +132,14 @@ interface WorkbenchState {
   pairing: PairingResponse;
   activeGroupId: string | null;
   activeBoxIndex: number;
+  activeBoxKey: string | null;
   boxBusy: boolean;
 
   // 标签设计器
   editorMode: EditorMode;
   draftSku: SkuTemplate;
+  editorDraftDirty: boolean;
+  editorDraftRestored: boolean;
   boxOverlayElements: CanvasElement[];
   selectedElementId: string | null;
   historyPast: CanvasElement[][];
@@ -129,6 +172,8 @@ interface WorkbenchState {
   clearBoxWorkspace: () => void;
   setManualAssignment: (carrierFileId: string, shipmentId: string) => Promise<void>;
   updateRedactionOption: <K extends keyof FbaRedactionOptions>(key: K, val: FbaRedactionOptions[K]) => Promise<void>;
+  setGroupBy: (groupBy: BoxGroupBy) => Promise<void>;
+  setInsertSeparatorPages: (v: boolean) => Promise<void>;
   setWorkMode: (mode: BoxWorkMode) => Promise<void>;
   setOrderMode: (mode: BoxOrderMode) => Promise<void>;
   setStageMode: (mode: BoxStageMode) => void;
@@ -139,10 +184,10 @@ interface WorkbenchState {
   setSingleBoxPairCopies: (shipmentId: string, boxIdx: number, fba: number, carrier: number) => Promise<void>;
   resetBoxPairCustomCopies: (shipmentId: string, boxIdx: number) => Promise<void>;
   toggleSingleBoxSelected: (shipmentId: string, boxIdx: number, selected: boolean) => Promise<void>;
-  selectAllBoxes: (shipmentId: string, selected: boolean) => Promise<void>;
+  selectAllBoxes: (groupId: string, selected: boolean) => Promise<void>;
   persistBoxPrefs: () => Promise<void>;
   setActiveGroupId: (sid: string) => void;
-  setActiveBoxIndex: (idx: number) => void;
+  setActiveBoxIndex: (idx: number, pairKey?: string) => void;
   recomputePairing: () => Promise<void>;
   loadFictionalDemo: (scenario: "dual_mix" | "unassigned" | "clear") => Promise<void>;
 
@@ -164,6 +209,7 @@ interface WorkbenchState {
   selectTemplate: (tpl: SkuTemplate) => void;
   createNewTemplate: (opts: { sku: string; fnsku: string; widthMm: number; heightMm: number; layoutType: "double" | "single" }) => void;
   saveDraftTemplate: () => Promise<void>;
+  discardEditorDraft: () => void;
   removeTemplate: (id: string) => Promise<void>;
   importProductPdf: (file: File) => Promise<void>;
 
@@ -182,6 +228,8 @@ const EMPTY_PAIRING: PairingResponse = {
   groups: [],
   unassigned_carriers: [],
   active_shipment_id: null,
+  group_by: "shipment",
+  sku_summary: [],
   can_print: false,
   issues: [],
   queue: [],
@@ -199,6 +247,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   fbaFiles: [],
   carrierFiles: [],
   manualAssignments: {},
+  groupBy: "shipment",
+  insertSeparatorPages: false,
   workMode: "paired",
   orderMode: "per_box_group",
   stageMode: "dual",
@@ -223,10 +273,13 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   pairing: EMPTY_PAIRING,
   activeGroupId: null,
   activeBoxIndex: 1,
+  activeBoxKey: null,
   boxBusy: false,
 
   editorMode: "sku_50x30",
   draftSku: DEFAULT_DRAFT_TEMPLATE,
+  editorDraftDirty: false,
+  editorDraftRestored: false,
   boxOverlayElements: [],
   selectedElementId: null,
   historyPast: [],
@@ -256,6 +309,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       ]);
       const prof50 = profiles.find((p) => p.spec_key === "50x30_double");
       const curRedaction = get().redactionOptions;
+      const savedDraft = readEditorDraftFromStorage();
       set({
         profiles,
         lastPrintedSpec: specState.last_printed_spec || "100x100_single",
@@ -263,11 +317,21 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         batches,
         printers,
         colGapMm: prof50 ? prof50.col_gap_mm : 2.0,
+        ...(savedDraft
+          ? {
+              draftSku: savedDraft.draftSku,
+              fnskuQty: savedDraft.fnskuQty || 120,
+              editorDraftDirty: true,
+              editorDraftRestored: true,
+            }
+          : {}),
         ...(prefs
           ? {
               fbaCopies: prefs.default_fba_copies,
               carrierCopies: prefs.default_carrier_copies,
               defaultCopies: Math.max(1, prefs.default_fba_copies, prefs.default_carrier_copies),
+              groupBy: prefs.group_by || "shipment",
+              insertSeparatorPages: Boolean(prefs.insert_separator_pages),
               orderMode: prefs.order_mode,
               workMode: prefs.work_mode,
               redactionOptions: {
@@ -324,13 +388,15 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     const allFba = s.fbaFiles.flatMap((f) => f.boxes);
     const allCar = s.carrierFiles.flatMap((f) => f.items);
     if (allFba.length === 0 && allCar.length === 0) {
-      set({ pairing: EMPTY_PAIRING, activeGroupId: null, activeBoxIndex: 1 });
+      set({ pairing: EMPTY_PAIRING, activeGroupId: null, activeBoxIndex: 1, activeBoxKey: null });
       return;
     }
     const res = await api.pairBoxes({
       fba_boxes: allFba,
       carrier_boxes: allCar,
       manual_assignments: s.manualAssignments,
+      group_by: s.groupBy,
+      insert_separator_pages: s.insertSeparatorPages,
       work_mode: s.workMode,
       order_mode: s.orderMode,
       default_copies: s.defaultCopies,
@@ -350,12 +416,20 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     const nextActiveId =
       res.groups.find((g) => g.shipment_id === latest.activeGroupId)?.shipment_id ?? res.active_shipment_id;
     const activeGroup = res.groups.find((g) => g.shipment_id === nextActiveId);
-    const firstBoxIdx = activeGroup?.pairs[0]?.box_index ?? 1;
-    const hasCurBox = activeGroup?.pairs.some((p) => p.box_index === latest.activeBoxIndex);
+    const firstPair = activeGroup?.pairs[0];
+    const firstPairKey = firstPair ? firstPair.pair_key || `${firstPair.shipment_id || nextActiveId}:${firstPair.box_index}` : null;
+    const curPair = latest.activeBoxKey
+      ? activeGroup?.pairs.find((p) => (p.pair_key || `${p.shipment_id || nextActiveId}:${p.box_index}`) === latest.activeBoxKey)
+      : activeGroup?.pairs.find((p) => p.box_index === latest.activeBoxIndex);
+    const resolvedPair = curPair || firstPair;
+    const resolvedKey = resolvedPair
+      ? resolvedPair.pair_key || `${resolvedPair.shipment_id || nextActiveId}:${resolvedPair.box_index}`
+      : firstPairKey;
     set({
       pairing: res,
       activeGroupId: nextActiveId,
-      activeBoxIndex: hasCurBox ? latest.activeBoxIndex : firstBoxIdx,
+      activeBoxIndex: resolvedPair?.box_index ?? 1,
+      activeBoxKey: resolvedKey,
     });
   },
 
@@ -448,6 +522,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       await api.saveBoxPreferences({
         default_fba_copies: safeFba,
         default_carrier_copies: safeCar,
+        group_by: s.groupBy,
+        insert_separator_pages: s.insertSeparatorPages,
         order_mode: s.orderMode,
         work_mode: s.workMode,
         redact_ship_from: s.redactionOptions.redact_ship_from,
@@ -479,6 +555,18 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     } finally {
       set({ boxBusy: false });
     }
+  },
+
+  setGroupBy: async (groupBy) => {
+    set({ groupBy, activeGroupId: null, activeBoxKey: null });
+    await get().recomputePairing();
+    void get().persistBoxPrefs();
+  },
+
+  setInsertSeparatorPages: async (v) => {
+    set({ insertSeparatorPages: v });
+    await get().recomputePairing();
+    void get().persistBoxPrefs();
   },
 
   setWorkMode: async (mode) => {
@@ -555,13 +643,14 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     await get().recomputePairing();
   },
 
-  selectAllBoxes: async (shipmentId, selected) => {
-    const group = get().pairing.groups.find((g) => g.shipment_id === shipmentId);
+  selectAllBoxes: async (groupId, selected) => {
+    const group = get().pairing.groups.find((g) => g.shipment_id === groupId);
     if (!group) return;
     set((s) => {
       const next = { ...s.selectedBoxKeys };
       group.pairs.forEach((p) => {
-        next[`${shipmentId}:${p.box_index}`] = selected;
+        const key = p.pair_key || `${p.shipment_id || groupId}:${p.box_index}`;
+        next[key] = selected;
       });
       return { selectedBoxKeys: next };
     });
@@ -570,11 +659,14 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
 
   setActiveGroupId: (sid) => {
     const g = get().pairing.groups.find((x) => x.shipment_id === sid);
-    set({ activeGroupId: sid, activeBoxIndex: g?.pairs[0]?.box_index ?? 1 });
+    const firstP = g?.pairs[0];
+    const firstKey = firstP ? firstP.pair_key || `${firstP.shipment_id || sid}:${firstP.box_index}` : null;
+    set({ activeGroupId: sid, activeBoxIndex: firstP?.box_index ?? 1, activeBoxKey: firstKey });
     void get().recomputePairing();
   },
 
-  setActiveBoxIndex: (idx) => set({ activeBoxIndex: idx }),
+  setActiveBoxIndex: (idx, pairKey) =>
+    set((s) => ({ activeBoxIndex: idx, activeBoxKey: pairKey || s.activeBoxKey })),
 
   loadFictionalDemo: async (scenario) => {
     if (scenario === "clear") {
@@ -583,8 +675,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     }
     set({ boxBusy: true, fbaFiles: [], carrierFiles: [], manualAssignments: {} });
     try {
-      const f1 = createFictionalFbaDemoFile("FBA00DEMO01", "DMO1", 2);
-      const f2 = createFictionalFbaDemoFile("FBA00DEMO02", "DMO2", 2);
+      const f1 = createFictionalFbaDemoFile("FBA00DEMO01", "DMO1", 2, ["DEMO-SKU-A", "DEMO-SKU-B"]);
+      const f2 = createFictionalFbaDemoFile("FBA00DEMO02", "DMO2", 2, ["DEMO-SKU-A", "DEMO-SKU-C"]);
       const c1 = createFictionalCarrierDemoFile("FBA00DEMO01", "DMO1", 2);
       const c2 =
         scenario === "unassigned"
@@ -626,6 +718,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       pairing: EMPTY_PAIRING,
       activeGroupId: null,
       activeBoxIndex: 1,
+      activeBoxKey: null,
       boxOverlayElements: [],
     }),
 
@@ -650,8 +743,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     const keptSel = s.selectedElementId && prev.some((e) => e.id === s.selectedElementId) ? s.selectedElementId : null;
     if (s.editorMode === "sku_50x30") {
       const bc = prev.find((e) => e.type === "barcode1d");
+      const nextDraft = { ...s.draftSku, fnsku: bc?.code || s.draftSku.fnsku, elements: prev };
+      flushEditorDraftNow(nextDraft, s.fnskuQty);
       set({
-        draftSku: { ...s.draftSku, fnsku: bc?.code || s.draftSku.fnsku, elements: prev },
+        draftSku: nextDraft,
+        editorDraftDirty: true,
         historyPast: nextPast,
         historyFuture: nextFuture,
         selectedElementId: keptSel,
@@ -671,8 +767,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     const keptSel = s.selectedElementId && nxt.some((e) => e.id === s.selectedElementId) ? s.selectedElementId : null;
     if (s.editorMode === "sku_50x30") {
       const bc = nxt.find((e) => e.type === "barcode1d");
+      const nextDraft = { ...s.draftSku, fnsku: bc?.code || s.draftSku.fnsku, elements: nxt };
+      flushEditorDraftNow(nextDraft, s.fnskuQty);
       set({
-        draftSku: { ...s.draftSku, fnsku: bc?.code || s.draftSku.fnsku, elements: nxt },
+        draftSku: nextDraft,
+        editorDraftDirty: true,
         historyPast: nextPast,
         historyFuture: nextFuture,
         selectedElementId: keptSel,
@@ -727,7 +826,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     set({ editorSim203B64: res.preview_203dpi_b64 });
   },
 
-  setFnskuQty: (q) => set({ fnskuQty: Math.max(1, Math.min(9999, q || 1)) }),
+  setFnskuQty: (q) => {
+    const qty = Math.max(1, Math.min(9999, q || 1));
+    const s = get();
+    set({ fnskuQty: qty, ...(s.editorMode === "sku_50x30" ? { editorDraftDirty: true } : {}) });
+    if (s.editorMode === "sku_50x30") flushEditorDraftNow(s.draftSku, qty);
+  },
 
   updateActiveElements: (updater, recordHistory = false) => {
     if (recordHistory) get().pushHistory();
@@ -735,30 +839,47 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     if (s.editorMode === "sku_50x30") {
       const nextEls = updater(s.draftSku.elements);
       const bc = nextEls.find((e) => e.type === "barcode1d");
+      const nextDraft: SkuTemplate = {
+        ...s.draftSku,
+        fnsku: bc?.code || s.draftSku.fnsku,
+        elements: nextEls,
+      };
       set({
-        draftSku: {
-          ...s.draftSku,
-          fnsku: bc?.code || s.draftSku.fnsku,
-          elements: nextEls,
-        },
+        draftSku: nextDraft,
+        editorDraftDirty: true,
+        editorDraftRestored: false,
       });
+      flushEditorDraftNow(nextDraft, s.fnskuQty);
     } else {
       set({ boxOverlayElements: updater(s.boxOverlayElements) });
     }
   },
 
-  updateDraftMeta: (patch) => set((s) => ({ draftSku: { ...s.draftSku, ...patch } })),
+  updateDraftMeta: (patch) =>
+    set((s) => {
+      const nextDraft = { ...s.draftSku, ...patch };
+      flushEditorDraftNow(nextDraft, s.fnskuQty);
+      return {
+        draftSku: nextDraft,
+        editorDraftDirty: true,
+        editorDraftRestored: false,
+      };
+    }),
 
-  selectTemplate: (tpl) =>
+  selectTemplate: (tpl) => {
+    clearEditorDraftFromStorage();
     set({
       editorMode: "sku_50x30",
       draftSku: { ...tpl, elements: tpl.elements.map((e) => ({ ...e })) },
       fnskuQty: tpl.defaultQty || 60,
+      editorDraftDirty: false,
+      editorDraftRestored: false,
       selectedElementId: null,
       historyPast: [],
       historyFuture: [],
       editorSim203: false,
-    }),
+    });
+  },
 
   createNewTemplate: ({ sku, fnsku, widthMm, heightMm, layoutType }) => {
     const cleanSku = sku.trim() || "NEW-SKU-01";
@@ -776,9 +897,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       defaultQty: 60,
       updated_at: "",
     };
+    flushEditorDraftNow(newTpl, get().fnskuQty);
     set({
       editorMode: "sku_50x30",
       draftSku: newTpl,
+      editorDraftDirty: true,
+      editorDraftRestored: false,
       selectedElementId: null,
       historyPast: [],
       historyFuture: [],
@@ -801,9 +925,27 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       elements: s.draftSku.elements,
       defaultQty: s.fnskuQty,
     });
+    clearEditorDraftFromStorage();
     const list = await api.fetchTemplates();
-    set({ draftSku: saved, templates: list });
+    set({ draftSku: saved, templates: list, editorDraftDirty: false, editorDraftRestored: false });
     notifications.show({ title: "模板已保存到本地库", message: `${saved.sku} (${saved.widthMm}×${saved.heightMm}mm)`, color: "green" });
+  },
+
+  discardEditorDraft: () => {
+    clearEditorDraftFromStorage();
+    const tpls = get().templates;
+    const base = tpls[0] ? { ...tpls[0], elements: tpls[0].elements.map((e) => ({ ...e })) } : DEFAULT_DRAFT_TEMPLATE;
+    set({
+      draftSku: base,
+      fnskuQty: base.defaultQty || 120,
+      editorDraftDirty: false,
+      editorDraftRestored: false,
+      selectedElementId: null,
+      historyPast: [],
+      historyFuture: [],
+      editorSim203: false,
+    });
+    notifications.show({ title: "已放弃未保存草稿", message: "已恢复至默认模板状态", color: "gray" });
   },
 
   removeTemplate: async (id) => {
@@ -829,7 +971,16 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       defaultQty: s.fnskuQty,
       updated_at: "",
     };
-    set({ editorMode: "sku_50x30", draftSku: newTpl, selectedElementId: null, historyPast: [], historyFuture: [] });
+    flushEditorDraftNow(newTpl, s.fnskuQty);
+    set({
+      editorMode: "sku_50x30",
+      draftSku: newTpl,
+      editorDraftDirty: true,
+      editorDraftRestored: false,
+      selectedElementId: null,
+      historyPast: [],
+      historyFuture: [],
+    });
     notifications.show({ title: "已解析亚马逊产品标", message: `FNSKU ${parsed.fnsku} · 已自动清洗中文成色`, color: "green" });
   },
 

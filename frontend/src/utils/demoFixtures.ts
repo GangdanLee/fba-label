@@ -100,13 +100,19 @@ function pdfDrawQrMockMatrix(seed: string, xMm: number, yBottomMm: number, sizeM
   return cmds.join("\n");
 }
 
-export function createFictionalFbaDemoFile(shipmentId = "FBA00DEMO01", warehouse = "DMO1", totalBoxes = 2): File {
+export function createFictionalFbaDemoFile(
+  shipmentId = "FBA00DEMO01",
+  warehouse = "DMO1",
+  totalBoxes = 2,
+  skuList?: string[],
+): File {
   const wMm = 101.6;
   const hMm = 152.4; // 故意使用 4x6 含留白页面，真实触发后端裁切
   const streams: string[] = [];
 
   for (let i = 1; i <= totalBoxes; i += 1) {
     const boxId = `${shipmentId}U${String(i).padStart(6, "0")}`;
+    const boxSku = skuList?.[i - 1] || (i === 1 ? "DEMO-SKU-A" : "DEMO-SKU-B");
     const s = [
       `0 0 0 rg`,
       `BT /F2 13 Tf ${pt(5)} ${pt(hMm - 10)} Td (${pdfEsc("FBA")}) Tj ET`,
@@ -126,7 +132,7 @@ export function createFictionalFbaDemoFile(shipmentId = "FBA00DEMO01", warehouse
       pdfBarcodeCommands(boxId, 6, hMm - 64, 62, 23),
       `BT /F2 7.5 Tf ${pt(20)} ${pt(hMm - 68)} Td (${pdfEsc(boxId)}) Tj ET`,
       pdfDrawQrMockMatrix(boxId, 72, hMm - 64, 22),
-      `BT /F2 7.5 Tf ${pt(46)} ${pt(hMm - 77)} Td (${pdfEsc("DEMO-SKU-01 · Qty 100")}) Tj ET`,
+      `BT /F2 7.5 Tf ${pt(46)} ${pt(hMm - 77)} Td (${pdfEsc(`${boxSku} · Qty 100`)}) Tj ET`,
       `BT /F2 8 Tf ${pt(22)} ${pt(hMm - 92)} Td (${pdfEsc("PLEASE LEAVE THIS LABEL UNCOVERED")}) Tj ET`,
     ].join("\n");
     streams.push(s);

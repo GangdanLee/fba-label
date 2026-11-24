@@ -9,6 +9,8 @@ import {
   Group,
   Modal,
   Paper,
+  SegmentedControl,
+  Select,
   Stack,
   Text,
   TextInput,
@@ -18,6 +20,7 @@ import { notifications } from "@mantine/notifications";
 import { Pencil, Play, Plus, Trash2 } from "lucide-react";
 import * as api from "../api/client";
 import type { CarrierRule } from "../types";
+import { CARRIER_RULE_PRESETS, buildRegexFromKeywords } from "../utils/carrierRuleBuilder";
 
 interface CarrierRulesModalProps {
   opened: boolean;
@@ -37,6 +40,10 @@ const EMPTY_RULE: CarrierRule = {
 export function CarrierRulesModal({ opened, onClose }: CarrierRulesModalProps) {
   const [rules, setRules] = useState<CarrierRule[]>([]);
   const [draft, setDraft] = useState<CarrierRule>({ ...EMPTY_RULE });
+  const [inputMode, setInputMode] = useState<"keywords" | "regex">("keywords");
+  const [kwShipment, setKwShipment] = useState("进仓号, FBA单号, SHIP_NO");
+  const [kwWarehouse, setKwWarehouse] = useState("目的仓, 仓库代码, DEST");
+  const [kwCtn, setKwCtn] = useState("箱号, 件数, CARTON");
   const [sampleFileName, setSampleFileName] = useState("FBA99CUST1_货代箱唛_LAX9.pdf");
   const [sampleText, setSampleText] = useState("SHIP_NO: FBA99CUST1\nDEST: LAX9\nCARTON 2 OF 5");
   const [testResult, setTestResult] = useState<{
@@ -164,7 +171,10 @@ export function CarrierRulesModal({ opened, onClose }: CarrierRulesModalProps) {
                       size="xs"
                       variant="subtle"
                       aria-label={`编辑规则 ${r.name}`}
-                      onClick={() => setDraft({ ...r })}
+                      onClick={() => {
+                        setDraft({ ...r });
+                        setInputMode("regex");
+                      }}
                     >
                       <Pencil size={13} />
                     </ActionIcon>
@@ -188,42 +198,124 @@ export function CarrierRulesModal({ opened, onClose }: CarrierRulesModalProps) {
 
         <Divider label={draft.id ? `编辑规则：${draft.name}` : "新增自定义解析规则"} labelPosition="left" />
 
-        <Group grow>
-          <TextInput
-            label="规则名称"
+        <Group justify="space-between" wrap="wrap" gap="xs">
+          <SegmentedControl
             size="xs"
-            placeholder="例如：顺丰货代专线规则"
-            value={draft.name}
-            onChange={(e) => setDraft({ ...draft, name: e.currentTarget.value })}
+            value={inputMode}
+            onChange={(v) => {
+              const mode = v as "keywords" | "regex";
+              setInputMode(mode);
+              if (mode === "keywords") {
+                setDraft((prev) => ({
+                  ...prev,
+                  shipment_regex: buildRegexFromKeywords("shipment", kwShipment) || prev.shipment_regex,
+                  warehouse_regex: buildRegexFromKeywords("warehouse", kwWarehouse) || prev.warehouse_regex,
+                  ctn_regex: buildRegexFromKeywords("ctn", kwCtn) || prev.ctn_regex,
+                }));
+              }
+            }}
+            data={[
+              { value: "keywords", label: "关键词模式（免写正则）" },
+              { value: "regex", label: "高级正则模式" },
+            ]}
           />
-          <TextInput
-            label="货件号正则（捕获组1）"
+          <Select
             size="xs"
-            placeholder="例如：SHIP_NO[:：\s]*([A-Z0-9]+)"
-            styles={{ input: { fontFamily: "var(--mono)" } }}
-            value={draft.shipment_regex}
-            onChange={(e) => setDraft({ ...draft, shipment_regex: e.currentTarget.value })}
+            w={280}
+            aria-label="套用常见货代模板预设"
+            placeholder="一键套用常见货代预设..."
+            data={CARRIER_RULE_PRESETS.map((p) => ({ value: p.id, label: p.label }))}
+            value={null}
+            onChange={(val) => {
+              const preset = CARRIER_RULE_PRESETS.find((p) => p.id === val);
+              if (!preset) return;
+              setKwShipment(preset.shipmentKeywords);
+              setKwWarehouse(preset.warehouseKeywords);
+              setKwCtn(preset.ctnKeywords);
+              setDraft({ ...preset.rule, id: draft.id });
+            }}
           />
         </Group>
 
-        <Group grow>
-          <TextInput
-            label="仓点正则（捕获组1）"
-            size="xs"
-            placeholder="例如：DEST[:：\s]*([A-Z]{3}\d)"
-            styles={{ input: { fontFamily: "var(--mono)" } }}
-            value={draft.warehouse_regex}
-            onChange={(e) => setDraft({ ...draft, warehouse_regex: e.currentTarget.value })}
-          />
-          <TextInput
-            label="箱号正则（捕获组1=第X箱, 组2=总箱数）"
-            size="xs"
-            placeholder="例如：CARTON\s*(\d+)\s*OF\s*(\d+)"
-            styles={{ input: { fontFamily: "var(--mono)" } }}
-            value={draft.ctn_regex}
-            onChange={(e) => setDraft({ ...draft, ctn_regex: e.currentTarget.value })}
-          />
-        </Group>
+        <TextInput
+          label="规则名称"
+          size="xs"
+          placeholder="例如：顺丰货代专线规则"
+          value={draft.name}
+          onChange={(e) => setDraft({ ...draft, name: e.currentTarget.value })}
+        />
+
+        {inputMode === "keywords" ? (
+          <Stack gap={6}>
+            <Group grow>
+              <TextInput
+                label="货件号前缀词（逗号分隔）"
+                size="xs"
+                placeholder="例如：进仓号, FBA单号, SHIP_NO"
+                value={kwShipment}
+                onChange={(e) => {
+                  const val = e.currentTarget.value;
+                  setKwShipment(val);
+                  setDraft((prev) => ({ ...prev, shipment_regex: buildRegexFromKeywords("shipment", val) }));
+                }}
+              />
+              <TextInput
+                label="仓点前缀词（逗号分隔）"
+                size="xs"
+                placeholder="例如：目的仓, 仓库代码, DEST"
+                value={kwWarehouse}
+                onChange={(e) => {
+                  const val = e.currentTarget.value;
+                  setKwWarehouse(val);
+                  setDraft((prev) => ({ ...prev, warehouse_regex: buildRegexFromKeywords("warehouse", val) }));
+                }}
+              />
+            </Group>
+            <TextInput
+              label="箱号前缀词（逗号分隔，自动匹配 X/N 或 X OF N）"
+              size="xs"
+              placeholder="例如：箱号, 件数, CARTON, CTNS"
+              value={kwCtn}
+              onChange={(e) => {
+                const val = e.currentTarget.value;
+                setKwCtn(val);
+                setDraft((prev) => ({ ...prev, ctn_regex: buildRegexFromKeywords("ctn", val) }));
+              }}
+            />
+            <Text size="xs" c="dimmed" ff="var(--mono)" truncate>
+              自动生成正则预览：FBA={draft.shipment_regex || "-"} | 仓={draft.warehouse_regex || "-"} | 箱={draft.ctn_regex || "-"}
+            </Text>
+          </Stack>
+        ) : (
+          <Stack gap={6}>
+            <Group grow>
+              <TextInput
+                label="货件号正则（捕获组1）"
+                size="xs"
+                placeholder="例如：SHIP_NO[:：\s]*([A-Z0-9]+)"
+                styles={{ input: { fontFamily: "var(--mono)" } }}
+                value={draft.shipment_regex}
+                onChange={(e) => setDraft({ ...draft, shipment_regex: e.currentTarget.value })}
+              />
+              <TextInput
+                label="仓点正则（捕获组1）"
+                size="xs"
+                placeholder="例如：DEST[:：\s]*([A-Z]{3}\d)"
+                styles={{ input: { fontFamily: "var(--mono)" } }}
+                value={draft.warehouse_regex}
+                onChange={(e) => setDraft({ ...draft, warehouse_regex: e.currentTarget.value })}
+              />
+            </Group>
+            <TextInput
+              label="箱号正则（捕获组1=第X箱, 组2=总箱数）"
+              size="xs"
+              placeholder="例如：CARTON\s*(\d+)\s*OF\s*(\d+)"
+              styles={{ input: { fontFamily: "var(--mono)" } }}
+              value={draft.ctn_regex}
+              onChange={(e) => setDraft({ ...draft, ctn_regex: e.currentTarget.value })}
+            />
+          </Stack>
+        )}
 
         <Group justify="space-between">
           <Checkbox

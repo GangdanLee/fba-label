@@ -68,6 +68,7 @@ class FbaBoxMeta(BaseModel):
     lang: Literal["en", "zh", "unknown"] = "en"
     weight_text: str | None = None
     sku_text: str | None = None
+    is_mixed_sku: bool = False
     qty: int | None = None
     has_made_in_china: bool = False
     mic_auto_added: bool = False
@@ -124,6 +125,10 @@ class PairingPairItem(BaseModel):
     """组内按箱号绑定的一对（或单边）标签项。"""
 
     box_index: int
+    shipment_id: str = ""
+    warehouse_code: str | None = None
+    sku_text: str | None = None
+    pair_key: str = ""
     fba_box: FbaBoxMeta | None = None
     carrier_box: CarrierBoxMeta | None = None
     selected: bool = True
@@ -133,17 +138,21 @@ class PairingPairItem(BaseModel):
 
 
 class PairingGroup(BaseModel):
-    """按 FBA 编号隔离的配对分组。"""
+    """按 FBA 编号或按 SKU 跨仓归集的配对分组。"""
 
     shipment_id: str
     warehouse_code: str | None = None
+    group_kind: Literal["shipment", "sku"] = "shipment"
+    display_label: str = ""
+    warehouses: list[str] = Field(default_factory=list)
+    shipment_ids: list[str] = Field(default_factory=list)
     status: Literal["matched", "missing_carrier", "missing_fba", "mismatch_detail"]
     issues: list[str] = Field(default_factory=list)
     pairs: list[PairingPairItem] = Field(default_factory=list)
 
 
 class PrintQueueItem(BaseModel):
-    """最终出纸队列单项。"""
+    """最终出纸队列单项（含可选换仓/换SKU分隔提示页）。"""
 
     seq: int
     kind: Literal["fba", "carrier"]
@@ -153,6 +162,13 @@ class PrintQueueItem(BaseModel):
     page_index: int
     label: str
     file_id: str = ""
+    warehouse_code: str = ""
+    sku_text: str = ""
+    source_file_name: str = ""
+    source_page_no: int = 1
+    is_separator: bool = False
+    separator_title: str = ""
+    separator_detail: str = ""
 
 
 class PairingRequest(BaseModel):
@@ -164,6 +180,8 @@ class PairingRequest(BaseModel):
         default_factory=dict,
         description="映射 file_id（或 file_id:page_index）到目标 FBA 货件编号",
     )
+    group_by: Literal["shipment", "sku"] = "shipment"
+    insert_separator_pages: bool = False
     work_mode: Literal["paired", "fba_only", "carrier_only"] = "paired"
     order_mode: Literal["interleave", "per_box_group", "split_all"] = "interleave"
     default_copies: int = 4
@@ -182,6 +200,8 @@ class BoxPrintPreferences(BaseModel):
 
     default_fba_copies: int = Field(default=2, ge=0, le=20)
     default_carrier_copies: int = Field(default=1, ge=0, le=20)
+    group_by: Literal["shipment", "sku"] = "shipment"
+    insert_separator_pages: bool = False
     order_mode: Literal["interleave", "per_box_group", "split_all"] = "per_box_group"
     work_mode: Literal["paired", "fba_only", "carrier_only"] = "paired"
     redact_ship_from: bool = True
@@ -196,6 +216,8 @@ class PairingResponse(BaseModel):
     groups: list[PairingGroup]
     unassigned_carriers: list[CarrierBoxMeta]
     active_shipment_id: str | None = None
+    group_by: Literal["shipment", "sku"] = "shipment"
+    sku_summary: list[dict[str, Any]] = Field(default_factory=list)
     can_print: bool = False
     issues: list[str] = Field(default_factory=list)
     queue: list[PrintQueueItem] = Field(default_factory=list)

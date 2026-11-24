@@ -75,11 +75,11 @@ def _write_readme_txt(dest_dir: Path, platform_tag: str, version: str) -> None:
             "【本机数据存储目录】\n"
             "  %LOCALAPPDATA%\\FBA Label Studio\\label_print.db\n"
         )
-        + "\n【核心功能与 v0.4.0 新特性】\n"
-        "  - 外箱灵活标签配比（默认记住）：支持「FBA 2 张 + 箱唛 1 张」等任意独立张数预设与按箱微调，默认配置自动保存。\n"
-        "  - 芯烨 XP-420B / 佳博深度兼容：增强品牌及 300dpi 自动识别、TSPL 负偏移像素级安全平移、指令头自动复位与反色补偿。\n"
-        "  - 产品标签与 CSV 批量套打：支持多编码 CSV 导入、一键换行防错贴、自定义纸卷规格（40×30/60×40/100×150）与货代正则规则。\n"
-        "  - 通用多协议打印路由：兼容 TSPL2 / ZPL II / 系统原生驱动 / 局域网 TCP 9100，支持多机免换纸。\n"
+        + "\n【核心功能与 v0.5.0 新特性】\n"
+        "  - 跨仓按 SKU 归集出纸与核对清单：支持「按货件/按 SKU」切换、同 SKU 跨仓库连续出纸、换仓/换 SKU 分隔提示页、UTF-8-BOM 核对明细 CSV 与按 SKU 拆分打包 ZIP。\n"
+        "  - 轻量 Amazon 仓点词典 & 货代免正则关键词模式：内置高频 FBA 仓点白名单减少误识别，货代解析支持直接填写前缀关键词与常见板式一键预设。\n"
+        "  - 本机配置与模板一键 ZIP 备份/迁移：支持轻量配置与完整快照 ZIP 导出、增量合并或覆盖导入，导入前自动创建本机数据库回滚备份。\n"
+        "  - 外箱独立配比记忆 & 芯烨/佳博兼容性：支持「FBA 2 + 箱唛 1」等灵活配比持久留存，以及 TSPL2 / ZPL II / TCP 9100 多机直连与设计器自动草稿防丢失。\n"
         "\n【隐私与开源说明】\n"
         "  - 所有 PDF 解析、隐私擦除、批量排版与打印记录均在您本机完成，绝不上传第三方服务器。\n"
         "  - 遵循 GNU AGPL-3.0 开源协议。\n"
@@ -149,7 +149,7 @@ def _write_sha256(file_path: Path) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="构建跨平台免安装 FBA Label Studio 发行包")
-    parser.add_argument("--version", default="v0.4.0", help="发布版本号 (例如 v0.4.0)")
+    parser.add_argument("--version", default="v0.5.0", help="发布版本号 (例如 v0.5.0)")
     parser.add_argument("--platform-tag", default="", help="覆盖输出平台后缀")
     parser.add_argument("--skip-frontend-build", action="store_true", help="跳过 npm run build（复用已有 frontend/dist）")
     args = parser.parse_args()

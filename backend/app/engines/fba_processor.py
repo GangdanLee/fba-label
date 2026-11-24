@@ -11,6 +11,7 @@ import pymupdf
 from PIL import Image
 
 from app.config import PAGE_BOX_MM, SAFE_BOX_MM, mm_to_pt
+from app.engines.amazon_fc_codes import extract_amazon_fc_code
 from app.engines.font_manager import ensure_reportlab_font
 from app.engines.pdf_engine import (
     PyMuPDFEngine,
@@ -78,16 +79,37 @@ def detect_fba_lang(text: str) -> Literal["en", "zh", "unknown"]:
 
 
 def _extract_warehouse(text: str, file_name: str) -> str | None:
-    sta_m = re.search(r"FBA\s*STA[^-\n]*-\s*([A-Z]{3}\d)\b", text, re.IGNORECASE)
-    if sta_m:
-        return sta_m.group(1).upper()
-    for candidate in WH_CODE_RE.findall(text.upper()):
-        if not candidate.startswith("FBA"):
-            return candidate
-    for candidate in WH_CODE_RE.findall((file_name or "").upper()):
-        if not candidate.startswith("FBA"):
-            return candidate
-    return None
+    return extract_amazon_fc_code(text, file_name)
+
+
+_SKU_SKIP_WORDS: frozenset[str] = frozenset(
+    {"QTY", "UNITS", "UNIT", "PCS", "BOX", "BOXES", "TOTAL", "MADE", "IN", "CHINA", "PLEASE", "LEAVE"}
+)
+
+
+def _extract_sku_info(text: str) -> tuple[str | None, bool]:
+    """识别标签中的 Single SKU / SKU: 或 Mixed SKU 混装箱标志。"""
+    raw = text or ""
+    if re.search(r"\b(?:Mixed\s+SKUs?|Multiple\s+SKUs?)\b|混合\s*SKU|多\s*SKU", raw, re.IGNORECASE):
+        return None, True
+
+    patterns = (
+        re.compile(r"(?:Single\s+SKU|单个\s*SKU)\s*[:：-]?\s*(?:\r?\n\s*)?([A-Za-z0-9][A-Za-z0-9._-]{1,48})", re.IGNORECASE),
+        re.compile(r"\bSKU\s*[:：]\s*([A-Za-z0-9][A-Za-z0-9._-]{1,48})", re.IGNORECASE),
+        re.compile(r"([A-Za-z0-9][A-Za-z0-9._-]{2,48})\s*[·•|/]\s*Qty\b", re.IGNORECASE),
+        re.compile(r"\b(X0[0-9A-Z]{8})\b"),
+    )
+    for pat in patterns:
+        m = pat.search(raw)
+        if not m:
+            continue
+        cand = m.group(1).strip()
+        up = cand.upper()
+        if up in _SKU_SKIP_WORDS or re.match(r"^FBA[A-Z0-9]{6,}", up):
+            continue
+        return cand, False
+
+    return None, False
 
 
 def _parse_box_meta(
@@ -126,6 +148,7 @@ def _parse_box_meta(
 
     qty_m = QTY_RE.search(text)
     has_mic = bool(re.search(r"made\s+in\s+china", text, re.IGNORECASE))
+    sku_text, is_mixed = _extract_sku_info(text)
 
     return FbaBoxMeta(
         file_id=file_id,
@@ -137,6 +160,8 @@ def _parse_box_meta(
         total_boxes=total_boxes,
         warehouse_code=_extract_warehouse(text, file_name),
         lang=detect_fba_lang(text),
+        sku_text=sku_text,
+        is_mixed_sku=is_mixed,
         qty=int(qty_m.group(1)) if qty_m else None,
         has_made_in_china=has_mic,
     )

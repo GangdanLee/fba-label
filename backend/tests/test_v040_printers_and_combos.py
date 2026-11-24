@@ -213,7 +213,11 @@ def test_box_preferences_persistence_and_v030_sqlite_migration(tmp_path: Path) -
     client2 = TestClient(app)
     r_after = client2.get("/api/box/preferences")
     assert r_after.status_code == 200
-    assert r_after.json() == new_prefs
+    data_after = r_after.json()
+    for k, v in new_prefs.items():
+        assert data_after[k] == v
+    assert data_after["group_by"] == "shipment"
+    assert data_after["insert_separator_pages"] is False
 
     # 4. 模拟 v0.3.0 旧表无 tspl_direction / invert_bitmap 列时自动迁移并支持 /execute-print 透传
     legacy_db = tmp_path / "legacy_v030.db"

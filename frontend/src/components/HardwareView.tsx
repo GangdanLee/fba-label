@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActionIcon,
   Alert,
@@ -11,6 +11,7 @@ import {
   Modal,
   NumberInput,
   Paper,
+  Radio,
   Select,
   SimpleGrid,
   Stack,
@@ -18,13 +19,30 @@ import {
   TextInput,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { ChevronDown, ChevronUp, Info, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Download, Info, Plus, Trash2, Upload } from "lucide-react";
 import * as api from "../api/client";
 import { useWorkbenchStore } from "../store/useWorkbenchStore";
-import type { CalibrationProfile } from "../types";
+import type { BackupSummary, CalibrationProfile } from "../types";
 
 export function HardwareView() {
-  const { profiles, printers, saveProfile, createProfile, removeProfile, refreshPrinters } = useWorkbenchStore();
+  const { profiles, printers, saveProfile, createProfile, removeProfile, refreshPrinters, initApp } = useWorkbenchStore();
+  const [backupSummary, setBackupSummary] = useState<BackupSummary | null>(null);
+  const [includeSnapshots, setIncludeSnapshots] = useState(false);
+  const [importMode, setImportMode] = useState<"merge" | "replace">("merge");
+  const [backupBusy, setBackupBusy] = useState(false);
+  const backupFileRef = useRef<HTMLInputElement>(null);
+
+  const loadBackupSummary = async () => {
+    try {
+      setBackupSummary(await api.fetchBackupSummary());
+    } catch {
+      // 忽略统计拉取失败
+    }
+  };
+
+  useEffect(() => {
+    void loadBackupSummary();
+  }, [profiles.length]);
   const [previewMeta, setPreviewMeta] = useState<{ img: string; dpi: number; protocol: string }>({
     img: "",
     dpi: 203,
@@ -172,6 +190,41 @@ export function HardwareView() {
       delete next[prof.spec_key];
       return next;
     });
+  };
+
+  const handleExportBackup = async () => {
+    setBackupBusy(true);
+    try {
+      const res = await api.exportSystemBackup(includeSnapshots);
+      api.downloadBase64File(res.zip_b64, res.filename, "application/zip");
+      notifications.show({
+        title: "已导出本地配置备份包",
+        message: `包含 ${res.counts.skus} 个模板、${res.counts.rules} 条规则、${res.counts.profiles} 个纸卷校准`,
+        color: "green",
+      });
+    } catch (err) {
+      notifications.show({ title: "备份导出失败", message: (err as Error).message, color: "red" });
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const handleImportBackupFile = async (file: File) => {
+    setBackupBusy(true);
+    try {
+      const res = await api.importSystemBackup(file, importMode);
+      await initApp();
+      await loadBackupSummary();
+      notifications.show({
+        title: "配置备份恢复成功",
+        message: `已${res.mode === "merge" ? "合并" : "覆盖"}恢复 ${res.restored.skus ?? 0} 个模板与 ${res.restored.rules ?? 0} 条规则（旧库留底：${res.pre_import_backup_name}）`,
+        color: "green",
+      });
+    } catch (err) {
+      notifications.show({ title: "导入恢复失败", message: (err as Error).message, color: "red" });
+    } finally {
+      setBackupBusy(false);
+    }
   };
 
   const handleRemoveProfile = async (specKey: string) => {
@@ -530,6 +583,91 @@ export function HardwareView() {
           />
         </Paper>
       )}
+
+      <Paper withBorder p="md" mt="md" radius="md">
+        <Group justify="space-between" mb="xs" wrap="wrap" gap="xs">
+          <div>
+            <Text fw={700}>本机配置与模板一键备份 / 多机迁移</Text>
+            <Text size="xs" c="dimmed">
+              将 SKU 自由排版模板、货代箱唛解析规则、打印机校准参数与外箱配比偏好打包为 ZIP 迁移至其他电脑（导入前自动创建回滚数据库副本）。
+            </Text>
+          </div>
+          {backupSummary && (
+            <Group gap={6} wrap="wrap">
+              <Badge size="xs" variant="light" color="blue">
+                SKU 模板 {backupSummary.skus_count} 个
+              </Badge>
+              <Badge size="xs" variant="light" color="teal">
+                货代规则 {backupSummary.rules_count} 条
+              </Badge>
+              <Badge size="xs" variant="light" color="indigo">
+                校准档 {backupSummary.profiles_count} 个
+              </Badge>
+              <Badge size="xs" variant="light" color="gray">
+                历史批次 {backupSummary.batches_count} 条
+              </Badge>
+            </Group>
+          )}
+        </Group>
+
+        <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" mt="sm">
+          <Paper withBorder p="sm" radius="sm" bg="var(--bg-subtle)">
+            <Stack gap="xs">
+              <Text size="xs" fw={700}>
+                导出本地配置备份 ZIP
+              </Text>
+              <Checkbox
+                size="xs"
+                label="同时打包历史打印批次与 PDF 快照（文件体积较大，换机完整迁移时勾选）"
+                checked={includeSnapshots}
+                onChange={(e) => setIncludeSnapshots(e.currentTarget.checked)}
+              />
+              <Button
+                size="xs"
+                leftSection={<Download size={13} />}
+                loading={backupBusy}
+                onClick={() => void handleExportBackup()}
+              >
+                导出配置备份 ZIP
+              </Button>
+            </Stack>
+          </Paper>
+
+          <Paper withBorder p="sm" radius="sm" bg="var(--bg-subtle)">
+            <Stack gap="xs">
+              <Text size="xs" fw={700}>
+                从备份 ZIP 导入恢复
+              </Text>
+              <Radio.Group value={importMode} onChange={(v) => setImportMode(v as "merge" | "replace")}>
+                <Group gap="md">
+                  <Radio size="xs" value="merge" label="增量合并（推荐：保留现有，同名覆盖更新）" />
+                  <Radio size="xs" value="replace" label="完全替换（清空后重建为备份状态）" />
+                </Group>
+              </Radio.Group>
+              <Button
+                size="xs"
+                variant="default"
+                leftSection={<Upload size={13} />}
+                loading={backupBusy}
+                onClick={() => backupFileRef.current?.click()}
+              >
+                选择备份 ZIP 导入恢复
+              </Button>
+              <input
+                ref={backupFileRef}
+                type="file"
+                accept=".zip,application/zip"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void handleImportBackupFile(file);
+                  e.target.value = "";
+                }}
+              />
+            </Stack>
+          </Paper>
+        </SimpleGrid>
+      </Paper>
 
       <Modal opened={addModalOpen} onClose={() => setAddModalOpen(false)} title="新增自定义纸卷规格" size="md" centered>
         <Stack gap="sm">

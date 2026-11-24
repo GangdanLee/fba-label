@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import db
-from app.api import batches, box_labels, fnsku, hardware
+from app.api import batches, box_labels, fnsku, hardware, system_backup
 from app.config import get_frontend_dist_dir
 
 
@@ -21,7 +21,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     title="FBA Label Studio API",
-    version="0.4.0",
+    version="0.5.0",
     lifespan=lifespan,
 )
 
@@ -29,11 +29,12 @@ app.include_router(fnsku.router)
 app.include_router(box_labels.router)
 app.include_router(batches.router)
 app.include_router(hardware.router)
+app.include_router(system_backup.router)
 
 
 @app.get("/api/health")
 async def health_check() -> JSONResponse:
-    return JSONResponse({"ok": True, "service": "fba-label-studio", "version": "0.4.0"})
+    return JSONResponse({"ok": True, "service": "fba-label-studio", "version": "0.5.0"})
 
 
 _frontend_dir = get_frontend_dist_dir()

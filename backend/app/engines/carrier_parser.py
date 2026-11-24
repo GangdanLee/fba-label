@@ -7,6 +7,7 @@ import re
 import pymupdf
 
 from app.config import PAGE_BOX_MM, SAFE_BOX_MM
+from app.engines.amazon_fc_codes import NOISE_FC_CODES, extract_amazon_fc_code
 from app.engines.pdf_engine import PyMuPDFEngine, merge_single_page_pdfs, render_pdf_page_png_data_url
 from app.models.schemas import CarrierBoxMeta, CarrierRule
 
@@ -70,25 +71,33 @@ def _match_shipment_id(text: str, file_name: str, extra_rules: list[CarrierRule]
 
 
 def _match_warehouse(text: str, file_name: str, extra_rules: list[CarrierRule] | None = None) -> str | None:
-    patterns: list[re.Pattern[str]] = []
     for rule in _order_enabled_rules(extra_rules):
         if rule.id == "rule_default":
             continue
         compiled = _compile_safe(rule.warehouse_regex, re.IGNORECASE)
-        if compiled is not None:
-            patterns.append(compiled)
-    patterns.append(DEFAULT_WH_RE)
-    for rule in _order_enabled_rules(extra_rules):
-        if rule.id == "rule_default":
-            compiled = _compile_safe(rule.warehouse_regex, re.IGNORECASE)
-            if compiled is not None:
-                patterns.append(compiled)
-
-    for source in (text.upper(), (file_name or "").upper()):
-        for pat in patterns:
-            for m in pat.findall(source):
+        if compiled is None:
+            continue
+        for source in ((text or "").upper(), (file_name or "").upper()):
+            for m in compiled.findall(source):
                 cand = (m[0] if isinstance(m, tuple) else m).strip().upper()
                 if cand and not cand.startswith("FBA"):
+                    return cand
+
+    # 优先使用内置亚马逊 FBA 仓点词典并过滤 BOX1/CTN1 等干扰词
+    fc = extract_amazon_fc_code(text, file_name)
+    if fc:
+        return fc
+
+    for rule in _order_enabled_rules(extra_rules):
+        if rule.id != "rule_default":
+            continue
+        compiled = _compile_safe(rule.warehouse_regex, re.IGNORECASE)
+        if compiled is None:
+            continue
+        for source in ((text or "").upper(), (file_name or "").upper()):
+            for m in compiled.findall(source):
+                cand = (m[0] if isinstance(m, tuple) else m).strip().upper()
+                if cand and not cand.startswith("FBA") and cand not in NOISE_FC_CODES:
                     return cand
     return None
 

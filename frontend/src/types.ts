@@ -2,6 +2,7 @@
 
 export type TabKey = "box" | "editor" | "batches" | "hardware";
 export type EditorMode = "sku_50x30" | "box_100x100";
+export type BoxGroupBy = "shipment" | "sku";
 export type BoxWorkMode = "paired" | "fba_only" | "carrier_only";
 export type BoxOrderMode = "interleave" | "per_box_group" | "split_all";
 export type BoxStageMode = "dual" | "compare";
@@ -53,6 +54,7 @@ export interface FbaBoxMeta {
   lang: "en" | "zh" | "unknown";
   weight_text?: string | null;
   sku_text?: string | null;
+  is_mixed_sku?: boolean;
   qty?: number | null;
   has_made_in_china: boolean;
   mic_auto_added: boolean;
@@ -98,6 +100,10 @@ export interface UploadedCarrierFile {
 
 export interface PairingPairItem {
   box_index: number;
+  shipment_id?: string;
+  warehouse_code?: string | null;
+  sku_text?: string | null;
+  pair_key?: string;
   fba_box: FbaBoxMeta | null;
   carrier_box: CarrierBoxMeta | null;
   selected: boolean;
@@ -109,6 +115,8 @@ export interface PairingPairItem {
 export interface BoxPrintPreferences {
   default_fba_copies: number;
   default_carrier_copies: number;
+  group_by?: BoxGroupBy;
+  insert_separator_pages?: boolean;
   order_mode: "interleave" | "per_box_group" | "split_all";
   work_mode: "paired" | "fba_only" | "carrier_only";
   redact_ship_from: boolean;
@@ -120,6 +128,10 @@ export interface BoxPrintPreferences {
 export interface PairingGroup {
   shipment_id: string;
   warehouse_code: string | null;
+  group_kind?: "shipment" | "sku";
+  display_label?: string;
+  warehouses?: string[];
+  shipment_ids?: string[];
   status: "matched" | "missing_carrier" | "missing_fba" | "mismatch_detail";
   issues: string[];
   pairs: PairingPairItem[];
@@ -134,16 +146,66 @@ export interface PrintQueueItem {
   page_index: number;
   label: string;
   file_id: string;
+  warehouse_code?: string;
+  sku_text?: string;
+  source_file_name?: string;
+  source_page_no?: number;
+  is_separator?: boolean;
+  separator_title?: string;
+  separator_detail?: string;
+}
+
+export interface SkuSummaryItem {
+  sku_key: string;
+  display_label: string;
+  box_count: number;
+  warehouses: string[];
+  shipment_ids: string[];
+  is_mixed: boolean;
+  is_unrecognized: boolean;
 }
 
 export interface PairingResponse {
   groups: PairingGroup[];
   unassigned_carriers: CarrierBoxMeta[];
   active_shipment_id: string | null;
+  group_by?: BoxGroupBy;
+  sku_summary?: SkuSummaryItem[];
   can_print: boolean;
   issues: string[];
   queue: PrintQueueItem[];
   total_sheets: number;
+}
+
+export interface BackupSummary {
+  skus_count: number;
+  rules_count: number;
+  profiles_count: number;
+  batches_count: number;
+  snapshot_files_count: number;
+  snapshots_bytes: number;
+  db_bytes: number;
+}
+
+export interface BackupExportResult {
+  filename: string;
+  size_bytes: number;
+  counts: {
+    skus: number;
+    profiles: number;
+    rules: number;
+    batches: number;
+    snapshots: number;
+  };
+  zip_b64: string;
+}
+
+export interface BackupImportResult {
+  ok: boolean;
+  mode: "merge" | "replace";
+  restored: Record<string, number>;
+  snapshots_restored: number;
+  pre_import_backup_name: string;
 }
 
 export interface SkuTemplate {

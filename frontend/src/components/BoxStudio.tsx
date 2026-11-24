@@ -29,6 +29,8 @@ export function BoxStudio() {
     fbaFiles,
     carrierFiles,
     manualAssignments,
+    groupBy,
+    insertSeparatorPages,
     workMode,
     orderMode,
     stageMode,
@@ -43,6 +45,7 @@ export function BoxStudio() {
     pairing,
     activeGroupId,
     activeBoxIndex,
+    activeBoxKey,
     boxBusy,
     boxOverlayElements,
     uploadFbaFiles,
@@ -52,6 +55,8 @@ export function BoxStudio() {
     clearBoxWorkspace,
     setManualAssignment,
     updateRedactionOption,
+    setGroupBy,
+    setInsertSeparatorPages,
     setWorkMode,
     setOrderMode,
     setStageMode,
@@ -75,8 +80,24 @@ export function BoxStudio() {
   const [rulesOpen, setRulesOpen] = useState(false);
 
   const activeGroup = pairing.groups.find((g) => g.shipment_id === activeGroupId) || pairing.groups[0] || null;
-  const activePair = activeGroup?.pairs.find((p) => p.box_index === activeBoxIndex) || activeGroup?.pairs[0] || null;
-  const groupIds = pairing.groups.map((g) => ({ value: g.shipment_id, label: `归属到 ${g.shipment_id}` }));
+  const activePair =
+    activeGroup?.pairs.find(
+      (p) => (p.pair_key || `${p.shipment_id || activeGroup.shipment_id}:${p.box_index}`) === activeBoxKey,
+    ) ||
+    activeGroup?.pairs.find((p) => p.box_index === activeBoxIndex) ||
+    activeGroup?.pairs[0] ||
+    null;
+  const knownShipments = Array.from(
+    new Set(
+      [
+        ...fbaFiles.map((f) => f.shipment_id),
+        ...(pairing.group_by === "sku"
+          ? pairing.groups.flatMap((g) => g.shipment_ids || [])
+          : pairing.groups.map((g) => g.shipment_id)),
+      ].filter((x): x is string => Boolean(x && !x.startsWith("__"))),
+    ),
+  );
+  const groupIds = knownShipments.map((sid) => ({ value: sid, label: `归属到 ${sid}` }));
 
   const handleExportMerged = async () => {
     if (!pairing.can_print || pairing.queue.length === 0) return;
@@ -90,12 +111,49 @@ export function BoxStudio() {
       queue: pairing.queue,
       overlay_elements: boxOverlayElements,
     });
-    api.downloadBase64Pdf(res.pdf_b64, `${activeGroup?.shipment_id || "FBA_Box"}_${res.page_count}pages.pdf`);
+    const safeName = (activeGroup?.display_label || activeGroup?.shipment_id || "FBA_Box").replace(/[\\/:*?"<>|\s]+/g, "_");
+    api.downloadBase64Pdf(res.pdf_b64, `${safeName}_${res.page_count}pages.pdf`);
     notifications.show({ title: "已导出合并 PDF", message: `共 ${res.page_count} 页 (100×100mm)`, color: "green" });
+  };
+
+  const handleExportManifestCsv = async () => {
+    if (!pairing.can_print || pairing.queue.length === 0) return;
+    const title = activeGroup?.display_label || activeGroup?.shipment_id || "FBA_Queue";
+    const res = await api.exportBoxManifestCsv({ queue: pairing.queue, title });
+    api.downloadBase64File(res.csv_b64, res.filename, "text/csv;charset=utf-8");
+    notifications.show({ title: "已导出核对明细 CSV", message: `共 ${res.row_count} 行出纸记录`, color: "green" });
+  };
+
+  const handleExportSkuZip = async () => {
+    if (!pairing.groups.length) return;
+    const fbaMap: Record<string, string> = {};
+    const carMap: Record<string, string> = {};
+    fbaFiles.forEach((f) => (fbaMap[f.file_id] = f.pdf_b64));
+    carrierFiles.forEach((f) => (carMap[f.file_id] = f.pdf_b64));
+    try {
+      const res = await api.exportBoxSkuZip({
+        fba_pdfs_b64: fbaMap,
+        carrier_pdfs_b64: carMap,
+        groups: pairing.groups,
+        work_mode: workMode,
+        order_mode: orderMode,
+        insert_separator_pages: insertSeparatorPages,
+        overlay_elements: boxOverlayElements,
+      });
+      api.downloadBase64File(res.zip_b64, res.filename, "application/zip");
+      notifications.show({
+        title: "已导出按 SKU 拆分 ZIP 包",
+        message: `包含 ${res.file_count} 份独立 PDF（共 ${res.total_pages} 页）与核对明细 CSV`,
+        color: "green",
+      });
+    } catch (err) {
+      notifications.show({ title: "打包 ZIP 失败", message: (err as Error).message, color: "red" });
+    }
   };
 
   const handleOpenPrint = () => {
     if (!pairing.can_print || !activeGroup) return;
+    const groupTitle = activeGroup.display_label || activeGroup.shipment_id;
     const comboDesc =
       workMode === "fba_only"
         ? `仅FBA×${fbaCopies}`
@@ -103,11 +161,11 @@ export function BoxStudio() {
           ? `仅箱唛×${carrierCopies}`
           : `FBA×${fbaCopies}+唛×${carrierCopies}`;
     openPrintJob({
-      title: `打印外箱任务 · ${activeGroup.shipment_id}`,
-      summaryDesc: `${activeGroup.shipment_id}（${comboDesc}，共 ${pairing.total_sheets} 张）`,
+      title: `打印外箱任务 · ${groupTitle}`,
+      summaryDesc: `${groupTitle}（${comboDesc}，共 ${pairing.total_sheets} 张）`,
       specKey: "100x100_single",
       batchType: workMode === "fba_only" ? "box_fba_only" : workMode === "carrier_only" ? "box_carrier_only" : "box_paired",
-      shipmentId: activeGroup.shipment_id,
+      shipmentId: groupTitle,
       warehouseCode: activeGroup.warehouse_code || "-",
       totalUnitsOrBoxes: activeGroup.pairs.filter((p) => p.selected).length,
       copiesPerBox: Math.max(1, defaultCopies, fbaCopies, carrierCopies),
@@ -301,8 +359,19 @@ export function BoxStudio() {
 
         <div className={classes.paneSec}>
           <div className={classes.secTitle}>
-            <span>打印范围与货件分组</span>
+            <span>打印范围与归集维度</span>
           </div>
+          <SegmentedControl
+            fullWidth
+            size="xs"
+            mb={6}
+            value={groupBy}
+            onChange={(val) => void setGroupBy(val as typeof groupBy)}
+            data={[
+              { value: "shipment", label: "按货件分组" },
+              { value: "sku", label: "按 SKU 跨仓" },
+            ]}
+          />
           <SegmentedControl
             fullWidth
             size="xs"
@@ -318,6 +387,8 @@ export function BoxStudio() {
           <Stack gap={6}>
             {pairing.groups.map((g) => {
               const active = activeGroup?.shipment_id === g.shipment_id;
+              const isSkuGrp = g.group_kind === "sku";
+              const labelText = g.display_label || g.shipment_id;
               return (
                 <Paper
                   key={g.shipment_id}
@@ -331,17 +402,30 @@ export function BoxStudio() {
                   }}
                   onClick={() => setActiveGroupId(g.shipment_id)}
                 >
-                  <Group justify="space-between" mb={2}>
-                    <Text size="xs" fw={700} ff="var(--mono)">
-                      {g.shipment_id}
+                  <Group justify="space-between" mb={2} wrap="nowrap" gap={4}>
+                    <Text size="xs" fw={700} ff="var(--mono)" truncate>
+                      {labelText}
                     </Text>
-                    <Badge size="xs" color={g.status === "matched" ? "green" : "orange"} variant="light">
+                    <Badge size="xs" color={g.status === "matched" ? "green" : "orange"} variant="light" style={{ flexShrink: 0 }}>
                       {g.status === "matched" ? "编号配对一致" : g.status === "missing_carrier" ? "缺箱唛" : g.status === "missing_fba" ? "缺外箱" : "存在差异"}
                     </Badge>
                   </Group>
-                  <Text size="xs" c="dimmed">
-                    仓点 {g.warehouse_code || "-"} · {g.pairs.length} 箱
-                  </Text>
+                  {isSkuGrp ? (
+                    <Group gap={4} mt={2} wrap="wrap">
+                      {(g.warehouses && g.warehouses.length > 0 ? g.warehouses : ["-"]).map((wh) => (
+                        <Badge key={wh} size="xs" variant="dot" color="blue">
+                          {wh}
+                        </Badge>
+                      ))}
+                      <Text size="xs" c="dimmed">
+                        · {g.pairs.length} 箱 ({g.shipment_ids?.length || 1} 票)
+                      </Text>
+                    </Group>
+                  ) : (
+                    <Text size="xs" c="dimmed">
+                      仓点 {g.warehouse_code || "-"} · {g.pairs.length} 箱
+                    </Text>
+                  )}
                 </Paper>
               );
             })}
@@ -373,14 +457,17 @@ export function BoxStudio() {
             </div>
             <Stack gap={6}>
               {activeGroup.pairs.map((p) => {
-                const active = activePair?.box_index === p.box_index;
-                const pairKey = `${activeGroup.shipment_id}:${p.box_index}`;
+                const realSid = p.shipment_id || activeGroup.shipment_id;
+                const pairKey = p.pair_key || `${realSid}:${p.box_index}`;
+                const active = activePair
+                  ? (activePair.pair_key || `${activePair.shipment_id || activeGroup.shipment_id}:${activePair.box_index}`) === pairKey
+                  : false;
                 const isCustom = boxFbaCopies[pairKey] !== undefined || boxCarrierCopies[pairKey] !== undefined;
                 const curFba = p.fba_copies ?? fbaCopies;
                 const curCar = p.carrier_copies ?? carrierCopies;
                 return (
                   <Paper
-                    key={p.box_index}
+                    key={pairKey}
                     withBorder
                     p={8}
                     radius="sm"
@@ -390,19 +477,24 @@ export function BoxStudio() {
                       borderColor: active ? "var(--accent)" : undefined,
                       background: active ? "var(--accent-soft)" : undefined,
                     }}
-                    onClick={() => setActiveBoxIndex(p.box_index)}
+                    onClick={() => setActiveBoxIndex(p.box_index, pairKey)}
                   >
                     <Group justify="space-between" wrap="nowrap" mb={4}>
-                      <Group gap={6}>
+                      <Group gap={5} wrap="nowrap">
                         <Checkbox
                           aria-label={`勾选第 ${p.box_index} 箱`}
                           checked={p.selected}
-                          onChange={(e) => void toggleSingleBoxSelected(activeGroup.shipment_id, p.box_index, e.currentTarget.checked)}
+                          onChange={(e) => void toggleSingleBoxSelected(realSid, p.box_index, e.currentTarget.checked)}
                           onClick={(e) => e.stopPropagation()}
                         />
-                        <Text size="xs" fw={600}>
+                        <Text size="xs" fw={600} style={{ whiteSpace: "nowrap" }}>
                           第 {p.box_index} 箱
                         </Text>
+                        {activeGroup.group_kind === "sku" && (
+                          <Badge size="xs" variant="light" color="indigo" title={`货件 ${realSid}`}>
+                            {p.warehouse_code || realSid.slice(-5)}
+                          </Badge>
+                        )}
                         {isCustom && (
                           <Badge size="xs" variant="light" color="orange">
                             自定义
@@ -418,7 +510,7 @@ export function BoxStudio() {
                             aria-label={`恢复第 ${p.box_index} 箱默认配比`}
                             onClick={(e) => {
                               e.stopPropagation();
-                              void resetBoxPairCustomCopies(activeGroup.shipment_id, p.box_index);
+                              void resetBoxPairCustomCopies(realSid, p.box_index);
                             }}
                           >
                             <RotateCcw size={12} />
@@ -439,7 +531,7 @@ export function BoxStudio() {
                           disabled={workMode === "carrier_only"}
                           value={curFba}
                           onChange={(v) =>
-                            void setSingleBoxPairCopies(activeGroup.shipment_id, p.box_index, Number(v) || 0, curCar)
+                            void setSingleBoxPairCopies(realSid, p.box_index, Number(v) || 0, curCar)
                           }
                         />
                       </Group>
@@ -455,7 +547,7 @@ export function BoxStudio() {
                           disabled={workMode === "fba_only"}
                           value={curCar}
                           onChange={(v) =>
-                            void setSingleBoxPairCopies(activeGroup.shipment_id, p.box_index, curFba, Number(v) || 0)
+                            void setSingleBoxPairCopies(realSid, p.box_index, curFba, Number(v) || 0)
                           }
                         />
                       </Group>
@@ -739,7 +831,8 @@ export function BoxStudio() {
           <span>出纸顺序</span>
           {pairing.queue.length > 0 && (
             <Text size="xs" c="dimmed" ff="var(--mono)">
-              F:{pairing.queue.filter((q) => q.kind === "fba").length} · M:{pairing.queue.filter((q) => q.kind === "carrier").length}
+              F:{pairing.queue.filter((q) => !q.is_separator && q.kind === "fba").length} · M:
+              {pairing.queue.filter((q) => !q.is_separator && q.kind === "carrier").length}
             </Text>
           )}
         </div>
@@ -764,10 +857,25 @@ export function BoxStudio() {
           );
         })()}
 
+        <Checkbox
+          size="xs"
+          mb="xs"
+          label="切换仓库 / 货件时插入分隔提示页"
+          checked={insertSeparatorPages}
+          onChange={(e) => void setInsertSeparatorPages(e.currentTarget.checked)}
+        />
+
         <Paper withBorder p={6} radius="sm" bg="var(--bg-subtle)" style={{ maxHeight: 84, overflowY: "auto" }}>
           <Group gap={4}>
             {pairing.queue.slice(0, 32).map((q) => (
-              <Badge key={q.seq} size="xs" variant="light" color={q.kind === "fba" ? "blue" : "green"} ff="var(--mono)">
+              <Badge
+                key={q.seq}
+                size="xs"
+                variant={q.is_separator ? "filled" : "light"}
+                color={q.is_separator ? "orange" : q.kind === "fba" ? "blue" : "green"}
+                ff="var(--mono)"
+                title={q.is_separator ? q.separator_detail : `${q.shipment_id} ${q.warehouse_code || ""}`}
+              >
                 {q.seq}.{q.label}
               </Badge>
             ))}
@@ -823,6 +931,25 @@ export function BoxStudio() {
           >
             导出合并 PDF
           </Button>
+          <SimpleGrid cols={2} spacing={6}>
+            <Button
+              size="xs"
+              variant="light"
+              disabled={!pairing.can_print || pairing.queue.length === 0}
+              onClick={() => void handleExportManifestCsv()}
+            >
+              导出核对 CSV
+            </Button>
+            <Button
+              size="xs"
+              variant="light"
+              color="teal"
+              disabled={!pairing.groups.length || !pairing.can_print}
+              onClick={() => void handleExportSkuZip()}
+            >
+              按组打包 ZIP
+            </Button>
+          </SimpleGrid>
         </Stack>
       </div>
       <CarrierRulesModal opened={rulesOpen} onClose={() => setRulesOpen(false)} />
